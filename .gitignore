@@ -12,10 +12,12 @@ node_modules/
 *.pid
 .DS_Store
 .ddns-state
-
-# Local benchmark artifacts
-benchmarks/
+logs/
 
 # Rust build artifacts
 target/
 **/target/
+
+# Self-host local files
+realtime-split/.env.selfhost
+realtime-split/.logs/

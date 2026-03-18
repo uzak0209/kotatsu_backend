@@ -1,42 +1,34 @@
 # kotatsu_backend
 
-Kotatsu 2D game backend prototype (Cloudflare Worker + KV).
+Rust-first backend for the Kotatsu 2D game prototype.
 
-## Setup
-1. Install dependencies
+## Current architecture
+- `realtime-rust/`
+  - single-process Rust prototype for matchmaking API + QUIC realtime
+- `realtime-split/`
+  - split Rust services for the current direction
+  - `api-server`: HTTP matchmaking API
+  - `realtime-server`: QUIC realtime server
+  - internal communication via gRPC
+
+## Main docs
+- `docs/game-spec.md`
+- `docs/latency-benchmark.md`
+- `docs/netem-quic-vs-ws.md`
+- `docs/pure-quic-interval32.md`
+- `docs/cloudflare-ddns-setup.md`
+
+## Realtime split setup
 ```bash
-npm install
+cd /Users/uzak/Projects/kotatsu/backend/realtime-split
+cp .env.selfhost.example .env.selfhost
+docker compose up --build
 ```
-2. Update `wrangler.toml` KV IDs
-3. Run local dev server
+
+## Validation
 ```bash
-npm run dev
+cd /Users/uzak/Projects/kotatsu/backend/realtime-split
+cargo check
+cargo test -p kotatsu-realtime-server-split
+./run-local-4clients.sh
 ```
-
-## API (MVP)
-- `GET /health`
-- `GET /v1/stages`
-- `POST /v1/matches`
-- `POST /v1/matches/:matchId/join`
-- `POST /v1/matches/:matchId/start`
-- `GET /v1/matches/:matchId`
-- `POST /v1/matches/:matchId/params/apply`
-
-## Docs
-- `docs/game-spec.md` - game-level requirements summary
-- `docs/backend-spec.md` - backend architecture and API rules
-- `docs/realtime-protocol.md` - WebTransport message contract draft
-- `docs/latency-benchmark.md` - local transport/runtime benchmark results
-- `docs/cloudflare-ddns-setup.md` - Cloudflare DDNS setup (PC script)
-
-## Benchmark Scripts
-- `benchmarks/latency-node.mjs` - TCP/UDP/WebSocket RTT on Node
-- `benchmarks/latency-rust.rs` - TCP/UDP RTT on Rust
-- `scripts/cloudflare-ddns-update.sh` - update Cloudflare A/AAAA record on IP change
-
-## Realtime Server (Rust)
-- `realtime-rust/` - matchmaking API (TCP/HTTP) + QUIC realtime server
-
-## Notes
-- Current implementation uses in-memory fallback when `GAME_KV` is not bound.
-- Realtime WebTransport gateway is documented but not implemented in this MVP.

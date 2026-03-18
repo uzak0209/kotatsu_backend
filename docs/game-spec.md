@@ -3,7 +3,7 @@
 ## 1. Scope
 - Platform: PC (Full HD / 16:9)
 - Frontend: Unity 6000.3.11f1
-- Networking: WebTransport (32ms tick target)
+- Networking: QUIC-based realtime transport (32ms tick target)
 - This document defines **MVP** behavior for backend integration.
 
 ## 2. Game Flow
@@ -59,7 +59,9 @@ Backend should not depend on physical key bindings.
 
 ## 7. Tick and Sync
 - Authoritative server tick: 32ms target (31.25Hz).
-- Client sends input frame + local sequence.
+- Client sends:
+  - reliable parameter changes on QUIC stream
+  - unreliable position updates on QUIC datagram
 - Server returns state snapshots + event deltas.
 
 ## 8. Non-goals in MVP
