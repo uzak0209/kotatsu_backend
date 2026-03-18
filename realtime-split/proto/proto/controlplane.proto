@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package kotatsu.controlplane.v1;
+
+service ControlPlane {
+  rpc CreateRoom(CreateRoomRequest) returns (CreateRoomResponse);
+  rpc IssueJoinTicket(IssueJoinTicketRequest) returns (IssueJoinTicketResponse);
+  rpc GetRoom(GetRoomRequest) returns (GetRoomResponse);
+}
+
+message CreateRoomRequest {}
+
+message CreateRoomResponse {
+  string match_id = 1;
+  uint32 max_players = 2;
+}
+
+message IssueJoinTicketRequest {
+  string match_id = 1;
+  string display_name = 2;
+}
+
+message IssueJoinTicketResponse {
+  string match_id = 1;
+  string player_id = 2;
+  string token = 3;
+  uint64 token_expires_at_unix = 4;
+  string quic_url = 5;
+}
+
+message GetRoomRequest {
+  string match_id = 1;
+}
+
+message RoomPlayer {
+  string player_id = 1;
+  string display_name = 2;
+  uint32 gravity = 3;
+  uint32 friction = 4;
+  uint32 speed = 5;
+  uint64 next_param_change_at_unix = 6;
+}
+
+message GetRoomResponse {
+  string match_id = 1;
+  uint32 max_players = 2;
+  repeated RoomPlayer players = 3;
+}

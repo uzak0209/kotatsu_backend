@@ -1,0 +1,8 @@
+[workspace]
+members = [
+  "proto",
+  "api-server",
+  "realtime-server",
+  "test-client"
+]
+resolver = "2"
