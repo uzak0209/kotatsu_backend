@@ -1,0 +1,28 @@
+services:
+  realtime:
+    build:
+      context: .
+      dockerfile: Dockerfile.realtime
+    env_file:
+      - .env.selfhost
+    restart: unless-stopped
+    environment:
+      GRPC_ADDR: 0.0.0.0:${GRPC_PORT:-50051}
+      QUIC_BIND_ADDR: 0.0.0.0:${QUIC_PORT:-4433}
+    ports:
+      - "${QUIC_PORT:-4433}:${QUIC_PORT:-4433}/udp"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    env_file:
+      - .env.selfhost
+    restart: unless-stopped
+    depends_on:
+      - realtime
+    environment:
+      API_ADDR: 0.0.0.0:${API_PORT:-8080}
+      CONTROL_PLANE_URL: http://realtime:${GRPC_PORT:-50051}
+    ports:
+      - "${API_PORT:-8080}:${API_PORT:-8080}"
