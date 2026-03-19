@@ -24,7 +24,9 @@
 - Parameter effects are relative to each player's current location/situation, enabling strategic interference.
 
 ## 4. Controllable Parameters
-Baseline: 3-stage value (`LOW`, `MID`, `HIGH`) unless otherwise noted.
+Baseline:
+- Gravity and Move Speed use 3-stage values (`LOW`, `MID`, `HIGH`)
+- Friction uses 2-stage values (`OFF`, `ON`)
 
 1. Gravity
 - LOW: weak jump / heavy feel
@@ -37,9 +39,8 @@ Baseline: 3-stage value (`LOW`, `MID`, `HIGH`) unless otherwise noted.
 - HIGH: faster but harder control
 
 3. Friction
-- LOW: slippery (ice-like)
-- MID: default
-- HIGH: sticky / wall-attach-like behavior (final tuning TBD)
+- OFF: slippery (ice-like)
+- ON: default friction
 
 ## 5. Stage Design Constraints
 - Each stage should expose at least 3 adjustable mechanics (strategic requirement).

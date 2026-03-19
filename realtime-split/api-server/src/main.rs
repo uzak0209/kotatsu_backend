@@ -14,37 +14,38 @@ use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::Mutex;
 use tonic::transport::Channel;
 use tracing::info;
+use utoipa::{OpenApi, ToSchema};
 
 #[derive(Clone)]
 struct AppState {
     grpc: Arc<Mutex<ControlPlaneClient<Channel>>>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 struct HealthRes {
     ok: bool,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 struct ErrorRes {
     error: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 struct CreateMatchReq {}
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 struct CreateMatchRes {
     match_id: String,
     max_players: u32,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 struct JoinMatchReq {
     display_name: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 struct JoinMatchRes {
     match_id: String,
     player_id: String,
@@ -53,7 +54,7 @@ struct JoinMatchRes {
     token_expires_at_unix: u64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 struct RoomPlayerRes {
     player_id: String,
     display_name: String,
@@ -63,18 +64,69 @@ struct RoomPlayerRes {
     next_param_change_at_unix: u64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 struct GetMatchRes {
     match_id: String,
     max_players: u32,
     players: Vec<RoomPlayerRes>,
 }
 
+#[derive(OpenApi)]
+#[openapi(
+    paths(health, openapi, create_match, get_match, join_match),
+    components(
+        schemas(
+            HealthRes,
+            ErrorRes,
+            CreateMatchReq,
+            CreateMatchRes,
+            JoinMatchReq,
+            JoinMatchRes,
+            RoomPlayerRes,
+            GetMatchRes
+        )
+    ),
+    tags(
+        (name = "kotatsu-api", description = "Kotatsu split matchmaking API")
+    )
+)]
+struct ApiDoc;
+
+#[utoipa::path(
+    get,
+    path = "/health",
+    tag = "kotatsu-api",
+    responses(
+        (status = 200, description = "Health status", body = HealthRes)
+    )
+)]
 async fn health() -> impl IntoResponse {
     Json(HealthRes { ok: true })
 }
 
-async fn create_match(State(st): State<AppState>, Json(_): Json<CreateMatchReq>) -> impl IntoResponse {
+#[utoipa::path(
+    get,
+    path = "/openapi.json",
+    tag = "kotatsu-api",
+    responses(
+        (status = 200, description = "Generated OpenAPI spec")
+    )
+)]
+async fn openapi() -> impl IntoResponse {
+    Json(ApiDoc::openapi())
+}
+
+#[utoipa::path(
+    post,
+    path = "/v1/matches",
+    tag = "kotatsu-api",
+    request_body = CreateMatchReq,
+    responses(
+        (status = 200, description = "Create a new match", body = CreateMatchRes),
+        (status = 502, description = "Control plane failure", body = ErrorRes)
+    )
+)]
+async fn create_match(State(st): State<AppState>, Json(_req): Json<CreateMatchReq>) -> impl IntoResponse {
     let mut grpc = st.grpc.lock().await;
     match grpc.create_room(CreateRoomRequest {}).await {
         Ok(res) => {
@@ -98,6 +150,21 @@ async fn create_match(State(st): State<AppState>, Json(_): Json<CreateMatchReq>)
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/matches/{match_id}/join",
+    tag = "kotatsu-api",
+    params(
+        ("match_id" = String, Path, description = "Match id")
+    ),
+    request_body = JoinMatchReq,
+    responses(
+        (status = 200, description = "Issue join ticket", body = JoinMatchRes),
+        (status = 404, description = "Match not found", body = ErrorRes),
+        (status = 409, description = "Match is full", body = ErrorRes),
+        (status = 502, description = "Control plane failure", body = ErrorRes)
+    )
+)]
 async fn join_match(
     State(st): State<AppState>,
     Path(match_id): Path<String>,
@@ -148,6 +215,19 @@ async fn join_match(
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/matches/{match_id}",
+    tag = "kotatsu-api",
+    params(
+        ("match_id" = String, Path, description = "Match id")
+    ),
+    responses(
+        (status = 200, description = "Get room snapshot", body = GetMatchRes),
+        (status = 404, description = "Match not found", body = ErrorRes),
+        (status = 502, description = "Control plane failure", body = ErrorRes)
+    )
+)]
 async fn get_match(State(st): State<AppState>, Path(match_id): Path<String>) -> impl IntoResponse {
     let mut grpc = st.grpc.lock().await;
     match grpc.get_room(GetRoomRequest { match_id }).await {
@@ -211,6 +291,7 @@ async fn main() -> Result<()> {
 
     let app = Router::new()
         .route("/health", get(health))
+        .route("/openapi.json", get(openapi))
         .route("/v1/matches", post(create_match))
         .route("/v1/matches/:match_id", get(get_match))
         .route("/v1/matches/:match_id/join", post(join_match))

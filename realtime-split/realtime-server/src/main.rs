@@ -23,7 +23,8 @@ const ROOM_MAX_PLAYERS: usize = 4;
 const TOKEN_TTL_SECS: u64 = 60 * 60;
 const PARAM_DEFAULT_LEVEL: u8 = 2;
 const PARAM_MIN_LEVEL: u8 = 1;
-const PARAM_MAX_LEVEL: u8 = 3;
+const PARAM_MAX_LEVEL_THREE_STAGE: u8 = 3;
+const PARAM_MAX_LEVEL_FRICTION: u8 = 2;
 const PARAM_CHANGE_COOLDOWN_SECS: u64 = 30;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -194,6 +195,13 @@ fn now_ms() -> u64 {
         .as_millis() as u64
 }
 
+fn param_level_bounds(param: ParamKind) -> (u8, u8) {
+    match param {
+        ParamKind::Gravity | ParamKind::Speed => (PARAM_MIN_LEVEL, PARAM_MAX_LEVEL_THREE_STAGE),
+        ParamKind::Friction => (PARAM_MIN_LEVEL, PARAM_MAX_LEVEL_FRICTION),
+    }
+}
+
 fn apply_param_change(
     params: &PlayerParams,
     next_param_change_at_unix: u64,
@@ -219,7 +227,8 @@ fn apply_param_change(
         ParamDirection::Decrease => slot.saturating_sub(1),
     };
 
-    if !(PARAM_MIN_LEVEL..=PARAM_MAX_LEVEL).contains(&candidate) {
+    let (min_level, max_level) = param_level_bounds(param);
+    if !(min_level..=max_level).contains(&candidate) {
         return Err(ParamUpdateError::OutOfRange);
     }
 
@@ -730,6 +739,30 @@ mod tests {
     }
 
     #[test]
+    fn friction_can_only_toggle_between_off_and_on() {
+        let params = PlayerParams::default();
+        let updated = apply_param_change(
+            &params,
+            0,
+            ParamKind::Friction,
+            ParamDirection::Decrease,
+            100,
+        )
+        .expect("should update");
+        assert_eq!(updated.params.friction, 1);
+
+        let err = apply_param_change(
+            &params,
+            0,
+            ParamKind::Friction,
+            ParamDirection::Increase,
+            100,
+        )
+        .expect_err("must reject");
+        assert_eq!(err, ParamUpdateError::OutOfRange);
+    }
+
+    #[test]
     fn param_change_respects_range_limit() {
         let params = PlayerParams {
             gravity: 3,
@@ -813,5 +846,48 @@ mod tests {
             player.next_param_change_at_unix,
             updated.next_param_change_at_unix
         );
+    }
+
+    #[tokio::test]
+    async fn update_player_params_allows_friction_toggle_to_one() {
+        let player_id = "p_test".to_string();
+        let match_id = "m_test".to_string();
+        let st = AppState {
+            core: Arc::new(Mutex::new(CoreState {
+                matches: HashMap::from([(
+                    match_id.clone(),
+                    MatchRoom {
+                        players: HashMap::from([(
+                            player_id.clone(),
+                            PlayerHandle {
+                                display_name: "tester".into(),
+                                params: PlayerParams::default(),
+                                next_param_change_at_unix: 0,
+                                reliable_tx: mpsc::channel(1).0,
+                                connection: None,
+                            },
+                        )]),
+                    },
+                )]),
+                tickets: HashMap::new(),
+            })),
+            quic_public_url: "quic://127.0.0.1:4433".into(),
+        };
+
+        let updated = update_player_params(
+            &st,
+            &match_id,
+            &player_id,
+            ParamKind::Friction,
+            ParamDirection::Decrease,
+        )
+        .await
+        .expect("update should succeed");
+
+        let core = st.core.lock().await;
+        let room = core.matches.get(&match_id).expect("room should exist");
+        let player = room.players.get(&player_id).expect("player should exist");
+        assert_eq!(updated.params.friction, 1);
+        assert_eq!(player.params.friction, 1);
     }
 }

@@ -19,6 +19,11 @@ Quick API smoke test:
 ./smoke-test.sh
 ```
 
+Generated OpenAPI:
+```bash
+curl -sS http://127.0.0.1:8080/openapi.json
+```
+
 4-client integration test (reliable + datagram paths):
 ```bash
 ./run-local-4clients.sh
