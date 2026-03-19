@@ -1,14 +1,14 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 APP_DIR_INPUT="${1:-${SCRIPT_DIR}/..}"
 APP_DIR="$(cd "${APP_DIR_INPUT}" && pwd)"
 SYSCTL_SOURCE="${APP_DIR}/.sysctl.selfhost"
 BOOT_SCRIPT="${APP_DIR}/scripts/home-podman.sh"
 
 as_root() {
-  if [[ "$(id -u)" -eq 0 ]]; then
+  if [ "$(id -u)" -eq 0 ]; then
     "$@"
   elif command -v doas >/dev/null 2>&1; then
     doas "$@"
@@ -24,7 +24,7 @@ warn_root_skip() {
 }
 
 install_sysctl() {
-  if [[ ! -f "${SYSCTL_SOURCE}" ]]; then
+  if [ ! -f "${SYSCTL_SOURCE}" ]; then
     return 0
   fi
 
@@ -33,7 +33,6 @@ install_sysctl() {
     return 0
   fi
 
-  local tmp_file
   tmp_file="$(mktemp)"
   cp "${SYSCTL_SOURCE}" "${tmp_file}"
 
@@ -51,7 +50,7 @@ install_openrc_boot_hook() {
     return 0
   fi
 
-  if ! command -v rc-update >/dev/null 2>&1 || [[ ! -d /etc/local.d ]]; then
+  if ! command -v rc-update >/dev/null 2>&1 || [ ! -d /etc/local.d ]; then
     return 1
   fi
 
@@ -60,7 +59,6 @@ install_openrc_boot_hook() {
     return 0
   fi
 
-  local start_tmp stop_tmp
   start_tmp="$(mktemp)"
   stop_tmp="$(mktemp)"
 
@@ -95,7 +93,6 @@ install_systemd_boot_hook() {
     return 0
   fi
 
-  local unit_tmp
   unit_tmp="$(mktemp)"
 
   cat > "${unit_tmp}" <<EOF

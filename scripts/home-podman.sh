@@ -1,13 +1,13 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 
-if [[ $# -lt 1 || $# -gt 2 ]]; then
+if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
   echo "Usage: $0 <recreate|up|down> [app_dir]" >&2
   exit 1
 fi
 
 ACTION="$1"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 APP_DIR_INPUT="${2:-${SCRIPT_DIR}/..}"
 APP_DIR="$(cd "${APP_DIR_INPUT}" && pwd)"
 
@@ -21,7 +21,7 @@ if ! command -v podman >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ ! -f "${APP_DIR}/.env.selfhost" ]]; then
+if [ ! -f "${APP_DIR}/.env.selfhost" ]; then
   echo "${APP_DIR}/.env.selfhost is required" >&2
   exit 1
 fi
