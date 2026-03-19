@@ -40,6 +40,8 @@ docker compose config
 just deploy-home <host> <user>
 ```
 
+The default remote app dir is `/home/<user>/kotatsu-backend`.
+
 GitHub Actions also supports deploy-on-push to `main` with these secrets:
 - `HOME_SERVER_HOST`
 - `HOME_SERVER_USER`

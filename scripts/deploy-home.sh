@@ -8,7 +8,7 @@ fi
 
 HOST="$1"
 USER_NAME="$2"
-APP_DIR="${3:-/opt/kotatsu-backend}"
+APP_DIR="${3:-/home/${USER_NAME}/kotatsu-backend}"
 SSH_PORT="${4:-22}"
 SSH_TARGET="${USER_NAME}@${HOST}"
 SSH_KEY_PATH="${SSH_KEY_PATH:-}"

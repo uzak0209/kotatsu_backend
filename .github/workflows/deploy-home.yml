@@ -28,4 +28,4 @@ jobs:
         run: |
           printf '%s\n' '${{ secrets.HOME_SERVER_ENV }}' > .env.selfhost
       - name: Deploy
-        run: ./scripts/deploy-home.sh "${HOME_SERVER_HOST}" "${HOME_SERVER_USER}" "${HOME_SERVER_APP_DIR:-/opt/kotatsu-backend}" "${HOME_SERVER_SSH_PORT:-22}"
+        run: ./scripts/deploy-home.sh "${HOME_SERVER_HOST}" "${HOME_SERVER_USER}" "${HOME_SERVER_APP_DIR:-/home/${HOME_SERVER_USER}/kotatsu-backend}" "${HOME_SERVER_SSH_PORT:-22}"
