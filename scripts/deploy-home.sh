@@ -45,29 +45,9 @@ scp "${SCP_OPTS[@]}" "${REPO_ROOT}/.env.selfhost" "${SSH_TARGET}:${APP_DIR}/.env
 ssh "${SSH_OPTS[@]}" "${SSH_TARGET}" "
 set -e
 cd '${APP_DIR}'
+./scripts/install-home-runtime.sh '${APP_DIR}'
 if command -v podman >/dev/null 2>&1; then
-  set -a
-  . ./.env.selfhost
-  set +a
-
-  podman build -f Dockerfile.realtime -t kotatsu-backend-realtime .
-  podman build -f Dockerfile.api -t kotatsu-backend-api .
-
-  podman run -d --replace \
-    --name kotatsu-backend-realtime \
-    --network host \
-    --env-file .env.selfhost \
-    -e GRPC_ADDR=\"0.0.0.0:\${GRPC_PORT:-50051}\" \
-    -e QUIC_BIND_ADDR=\"0.0.0.0:\${QUIC_PORT:-4433}\" \
-    kotatsu-backend-realtime
-
-  podman run -d --replace \
-    --name kotatsu-backend-api \
-    --network host \
-    --env-file .env.selfhost \
-    -e API_ADDR=\"0.0.0.0:\${API_PORT:-8080}\" \
-    -e CONTROL_PLANE_URL=\"http://127.0.0.1:\${GRPC_PORT:-50051}\" \
-    kotatsu-backend-api
+  ./scripts/home-podman.sh recreate '${APP_DIR}'
 else
   docker compose up -d --build
 fi

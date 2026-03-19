@@ -21,6 +21,11 @@ cp .env.selfhost.example .env.selfhost
 docker compose up --build
 ```
 
+Optional host tuning for self-host deploys:
+```bash
+cp .sysctl.selfhost.example .sysctl.selfhost
+```
+
 ## Main docs
 - `docs/game-spec.md`
 - `docs/latency-benchmark.md`
@@ -47,7 +52,10 @@ GitHub Actions also supports deploy-on-push to `main` with these secrets:
 - `HOME_SERVER_USER`
 - `HOME_SERVER_SSH_KEY`
 - `HOME_SERVER_ENV`
+- optional: `HOME_SERVER_SYSCTL`
 - optional: `HOME_SERVER_SSH_PORT`
 - optional: `HOME_SERVER_APP_DIR`
 
-On the Alpine home server, the deploy script uses `podman build` and `podman run --network host` directly instead of Compose.
+If `.sysctl.selfhost` exists locally, or `HOME_SERVER_SYSCTL` is set in GitHub Actions, deploy copies that content to `/etc/sysctl.d/99-kotatsu.conf` on the server and applies it immediately.
+
+On the Alpine home server, the deploy script uses `podman` directly instead of Compose, installs an OpenRC boot hook when it can elevate with `doas` or `sudo`, and recreates the containers during deploy. That makes the host sysctl settings persistent and brings the backend containers back after reboot.

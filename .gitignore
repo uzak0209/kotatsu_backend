@@ -19,5 +19,6 @@ target/
 **/target/
 
 # Self-host local files
+.sysctl.selfhost
 realtime-split/.env.selfhost
 realtime-split/.logs/

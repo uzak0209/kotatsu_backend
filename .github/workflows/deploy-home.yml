@@ -13,6 +13,7 @@ jobs:
       HOME_SERVER_USER: ${{ secrets.HOME_SERVER_USER }}
       HOME_SERVER_SSH_PORT: ${{ secrets.HOME_SERVER_SSH_PORT }}
       HOME_SERVER_APP_DIR: ${{ secrets.HOME_SERVER_APP_DIR }}
+      HOME_SERVER_SYSCTL: ${{ secrets.HOME_SERVER_SYSCTL }}
     steps:
       - uses: actions/checkout@v4
       - name: Start ssh-agent
@@ -27,5 +28,9 @@ jobs:
       - name: Write env file
         run: |
           printf '%s\n' '${{ secrets.HOME_SERVER_ENV }}' > .env.selfhost
+      - name: Write sysctl file
+        if: ${{ env.HOME_SERVER_SYSCTL != '' }}
+        run: |
+          printf '%s\n' '${{ env.HOME_SERVER_SYSCTL }}' > .sysctl.selfhost
       - name: Deploy
         run: ./scripts/deploy-home.sh "${HOME_SERVER_HOST}" "${HOME_SERVER_USER}" "${HOME_SERVER_APP_DIR:-/home/${HOME_SERVER_USER}/kotatsu-backend}" "${HOME_SERVER_SSH_PORT:-22}"
