@@ -9,7 +9,7 @@ Internal communication:
 
 ## Run with Docker
 ```bash
-cd /Users/uzak/Projects/kotatsu/backend/realtime-split
+cd /Users/uzak/Projects/kotatsu/backend
 cp .env.selfhost.example .env.selfhost
 docker compose up --build
 ```

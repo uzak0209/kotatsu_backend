@@ -1,0 +1,31 @@
+name: Deploy Home Server
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      HOME_SERVER_HOST: ${{ secrets.HOME_SERVER_HOST }}
+      HOME_SERVER_USER: ${{ secrets.HOME_SERVER_USER }}
+      HOME_SERVER_SSH_PORT: ${{ secrets.HOME_SERVER_SSH_PORT }}
+      HOME_SERVER_APP_DIR: ${{ secrets.HOME_SERVER_APP_DIR }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start ssh-agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.HOME_SERVER_SSH_KEY }}
+      - name: Add host key
+        run: |
+          mkdir -p ~/.ssh
+          SSH_PORT="${HOME_SERVER_SSH_PORT:-22}"
+          ssh-keyscan -p "${SSH_PORT}" "${HOME_SERVER_HOST}" >> ~/.ssh/known_hosts
+      - name: Write env file
+        run: |
+          printf '%s\n' '${{ secrets.HOME_SERVER_ENV }}' > .env.selfhost
+      - name: Deploy
+        run: ./scripts/deploy-home.sh "${HOME_SERVER_HOST}" "${HOME_SERVER_USER}" "${HOME_SERVER_APP_DIR:-/opt/kotatsu-backend}" "${HOME_SERVER_SSH_PORT:-22}"
