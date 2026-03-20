@@ -24,6 +24,9 @@ Generated OpenAPI:
 curl -sS http://127.0.0.1:8080/openapi.json
 ```
 
+Human-friendly API docs:
+- `../docs/matchmaking-api.md`
+
 4-client integration test (reliable + datagram paths):
 ```bash
 ./run-local-4clients.sh
