@@ -35,6 +35,32 @@ Japanese QUIC protocol docs:
 ./run-local-4clients.sh
 ```
 
+Remote 4-client integration test against the self-hosted app (`kotatsu.ruxel.net` by default):
+```bash
+./run-remote-4clients.sh
+```
+
+From the repo root, you can also run:
+```bash
+just test-remote
+```
+
+The remote runner resolves the hostname first and uses the IP for API/QUIC access, which helps in environments where the test client cannot resolve the hostname reliably.
+
+Remote QUIC datagram one-way latency measurement against the self-hosted app:
+```bash
+./measure-remote-rtt.sh
+```
+
+From the repo root:
+```bash
+just rtt-remote
+```
+
+This measures post-connect QUIC datagram one-way latency by connecting two clients to the same room and timing `client A -> server -> client B` on a shared local clock.
+
+Prebuilt tester binaries for macOS, Windows, and Linux can be generated from the GitHub Actions workflow `Build Remote RTT Binaries`. Pushing a tag like `remote-rtt-v1.0.0` will also attach those binaries to a GitHub Release automatically. The packaged tester instructions live in `docs/remote-rtt-testers.txt`.
+
 ## Exposed ports
 - `8080/tcp`: API server
 - `4433/udp`: QUIC realtime

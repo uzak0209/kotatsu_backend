@@ -1,0 +1,72 @@
+name: Build Remote RTT Binaries
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'remote-rtt-v*'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            artifact_name: remote-rtt-linux-x86_64
+            binary_name: remote-rtt
+          - runner: windows-latest
+            artifact_name: remote-rtt-windows-x86_64
+            binary_name: remote-rtt.exe
+          - runner: macos-13
+            artifact_name: remote-rtt-macos-x86_64
+            binary_name: remote-rtt
+          - runner: macos-14
+            artifact_name: remote-rtt-macos-arm64
+            binary_name: remote-rtt
+
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: realtime-split
+
+      - name: Build remote-rtt
+        run: cargo build --release --manifest-path realtime-split/Cargo.toml -p kotatsu-test-client --bin remote-rtt
+
+      - name: Stage artifact files (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp "realtime-split/target/release/${{ matrix.binary_name }}" "dist/${{ matrix.binary_name }}"
+          chmod +x "dist/${{ matrix.binary_name }}"
+          cp docs/remote-rtt-testers.txt dist/README.txt
+
+      - name: Stage artifact files (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item "realtime-split/target/release/${{ matrix.binary_name }}" "dist/${{ matrix.binary_name }}"
+          Copy-Item "docs/remote-rtt-testers.txt" "dist/README.txt"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: dist/*
+          if-no-files-found: error
+
+      - name: Upload release assets
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          fail_on_unmatched_files: true
+          generate_release_notes: true
