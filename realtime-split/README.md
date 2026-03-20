@@ -29,6 +29,30 @@ curl -sS http://127.0.0.1:8080/openapi.json
 ./run-local-4clients.sh
 ```
 
+Remote 4-client integration test against the self-hosted app (`kotatsu.ruxel.net` by default):
+```bash
+./run-remote-4clients.sh
+```
+
+From the repo root, you can also run:
+```bash
+just test-remote
+```
+
+The remote runner resolves the hostname first and uses the IP for API/QUIC access, which helps in environments where the test client cannot resolve the hostname reliably.
+
+Remote QUIC datagram one-way latency measurement against the self-hosted app:
+```bash
+./measure-remote-rtt.sh
+```
+
+From the repo root:
+```bash
+just rtt-remote
+```
+
+This measures post-connect QUIC datagram one-way latency by connecting two clients to the same room and timing `client A -> server -> client B` on a shared local clock.
+
 ## Exposed ports
 - `8080/tcp`: API server
 - `4433/udp`: QUIC realtime
