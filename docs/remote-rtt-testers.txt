@@ -1,0 +1,46 @@
+Kotatsu remote RTT tester
+=========================
+
+This binary measures post-connect QUIC datagram one-way latency:
+client A -> server -> client B
+
+No Rust installation is required.
+
+If you received this file as a GitHub Release asset, download the artifact
+that matches your OS.
+
+How to run
+----------
+
+macOS / Linux:
+1. Extract the downloaded artifact zip.
+2. Open Terminal in the extracted folder.
+3. Run:
+   chmod +x ./remote-rtt
+   ./remote-rtt --host kotatsu.ruxel.net --samples 30
+
+Windows (PowerShell):
+1. Extract the downloaded artifact zip.
+2. Open PowerShell in the extracted folder.
+3. Run:
+   .\remote-rtt.exe --host kotatsu.ruxel.net --samples 30
+
+What to send back
+-----------------
+
+Please send:
+- the full terminal output
+- your rough location (country / city is enough)
+- network type (home Wi-Fi, wired fiber, mobile tethering, 5G, etc.)
+- time of day when you ran it
+
+If you hit issues
+-----------------
+
+- If macOS blocks the binary because it is unsigned:
+  xattr -d com.apple.quarantine ./remote-rtt
+  Then run it again.
+
+- If Windows SmartScreen warns, use "More info" -> "Run anyway" only if you trust the source.
+
+- If hostname resolution fails, send back the error message as-is.

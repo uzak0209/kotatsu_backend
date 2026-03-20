@@ -5,15 +5,157 @@ use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{DigitallySignedStruct, SignatureScheme};
 use serde::{Deserialize, Serialize};
 use std::{
+    env,
     sync::Arc,
     time::{Duration, Instant},
 };
 use tokio::{net::lookup_host, time::{sleep, timeout}};
 use url::Url;
 
+const DEFAULT_HOST: &str = "kotatsu.ruxel.net";
+const DEFAULT_API_PORT: u16 = 8080;
+const DEFAULT_QUIC_PORT: u16 = 4433;
 const DEFAULT_SAMPLES: usize = 10;
 const IO_TIMEOUT_SECS: u64 = 10;
 const DATAGRAM_TIMEOUT_SECS: u64 = 3;
+
+#[derive(Debug, Clone)]
+struct Config {
+    remote_host: String,
+    remote_ip: Option<String>,
+    api_port: u16,
+    quic_port: u16,
+    samples: usize,
+    api_base_url: Option<String>,
+    quic_override_url: Option<String>,
+}
+
+impl Config {
+    fn api_base(&self) -> String {
+        if let Some(url) = &self.api_base_url {
+            return url.clone();
+        }
+        let target = self.remote_ip.as_deref().unwrap_or(&self.remote_host);
+        format!("http://{target}:{}", self.api_port)
+    }
+
+    fn quic_override(&self) -> String {
+        if let Some(url) = &self.quic_override_url {
+            return url.clone();
+        }
+        let target = self.remote_ip.as_deref().unwrap_or(&self.remote_host);
+        format!("quic://{target}:{}", self.quic_port)
+    }
+}
+
+fn parse_u16(value: &str, flag: &str) -> Result<u16> {
+    value
+        .parse::<u16>()
+        .with_context(|| format!("failed to parse {flag} as u16"))
+}
+
+fn parse_usize(value: &str, flag: &str) -> Result<usize> {
+    value
+        .parse::<usize>()
+        .with_context(|| format!("failed to parse {flag} as usize"))
+}
+
+fn next_arg_value(args: &mut env::Args, flag: &str) -> Result<String> {
+    args.next()
+        .ok_or_else(|| anyhow!("missing value for {flag}"))
+}
+
+fn usage(program: &str) -> String {
+    format!(
+        "Usage: {program} [options]\n\
+         \n\
+         Measures post-connect QUIC datagram one-way latency over\n\
+         client A -> server -> client B.\n\
+         \n\
+         Options:\n\
+           --host <host>            Remote hostname (default: {DEFAULT_HOST})\n\
+           --remote-ip <ip>         Use this IP for API/QUIC instead of resolving the host\n\
+           --api-port <port>        HTTP API port (default: {DEFAULT_API_PORT})\n\
+           --quic-port <port>       QUIC port (default: {DEFAULT_QUIC_PORT})\n\
+           --samples <count>        Number of datagram samples (default: {DEFAULT_SAMPLES})\n\
+           --api-base-url <url>     Override the full HTTP API base URL\n\
+           --quic-url <url>         Override the full QUIC URL\n\
+           -h, --help               Show this help\n\
+         \n\
+         Environment fallback:\n\
+           REMOTE_HOST, REMOTE_IP, API_PORT, QUIC_PORT, RTT_SAMPLES,\n\
+           API_BASE_URL, QUIC_OVERRIDE_URL\n"
+    )
+}
+
+fn parse_config() -> Result<Config> {
+    let mut config = Config {
+        remote_host: env::var("REMOTE_HOST").unwrap_or_else(|_| DEFAULT_HOST.into()),
+        remote_ip: env::var("REMOTE_IP").ok().filter(|value| !value.is_empty()),
+        api_port: env::var("API_PORT")
+            .ok()
+            .as_deref()
+            .map(|value| parse_u16(value, "API_PORT"))
+            .transpose()?
+            .unwrap_or(DEFAULT_API_PORT),
+        quic_port: env::var("QUIC_PORT")
+            .ok()
+            .as_deref()
+            .map(|value| parse_u16(value, "QUIC_PORT"))
+            .transpose()?
+            .unwrap_or(DEFAULT_QUIC_PORT),
+        samples: env::var("RTT_SAMPLES")
+            .ok()
+            .as_deref()
+            .map(|value| parse_usize(value, "RTT_SAMPLES"))
+            .transpose()?
+            .filter(|value| *value > 0)
+            .unwrap_or(DEFAULT_SAMPLES),
+        api_base_url: env::var("API_BASE_URL").ok().filter(|value| !value.is_empty()),
+        quic_override_url: env::var("QUIC_OVERRIDE_URL")
+            .ok()
+            .filter(|value| !value.is_empty()),
+    };
+
+    let mut args = env::args();
+    let program = args.next().unwrap_or_else(|| "remote-rtt".into());
+
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--host" => config.remote_host = next_arg_value(&mut args, "--host")?,
+            "--remote-ip" => config.remote_ip = Some(next_arg_value(&mut args, "--remote-ip")?),
+            "--api-port" => {
+                let value = next_arg_value(&mut args, "--api-port")?;
+                config.api_port = parse_u16(&value, "--api-port")?;
+            }
+            "--quic-port" => {
+                let value = next_arg_value(&mut args, "--quic-port")?;
+                config.quic_port = parse_u16(&value, "--quic-port")?;
+            }
+            "--samples" => {
+                let value = next_arg_value(&mut args, "--samples")?;
+                let parsed = parse_usize(&value, "--samples")?;
+                if parsed == 0 {
+                    return Err(anyhow!("--samples must be greater than 0"));
+                }
+                config.samples = parsed;
+            }
+            "--api-base-url" => {
+                config.api_base_url = Some(next_arg_value(&mut args, "--api-base-url")?)
+            }
+            "--quic-url" => {
+                config.quic_override_url = Some(next_arg_value(&mut args, "--quic-url")?)
+            }
+            "-h" | "--help" => {
+                print!("{}", usage(&program));
+                std::process::exit(0);
+            }
+            _ => return Err(anyhow!("unknown argument: {arg}\n\n{}", usage(&program))),
+        }
+    }
+
+    Ok(config)
+}
 
 #[derive(Debug, Deserialize)]
 struct CreateMatchRes {
@@ -326,13 +468,10 @@ async fn measure_datagram_one_way(
 async fn main() -> Result<()> {
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
-    let api_base = std::env::var("API_BASE_URL").unwrap_or_else(|_| "http://127.0.0.1:8080".into());
-    let samples = std::env::var("RTT_SAMPLES")
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
-        .filter(|v| *v > 0)
-        .unwrap_or(DEFAULT_SAMPLES);
-    let quic_override_url = std::env::var("QUIC_OVERRIDE_URL").ok();
+    let config = parse_config()?;
+    let api_base = config.api_base();
+    let quic_override_url = Some(config.quic_override());
+    let samples = config.samples;
 
     let http = reqwest::Client::builder()
         .timeout(Duration::from_secs(IO_TIMEOUT_SECS))
@@ -366,8 +505,10 @@ async fn main() -> Result<()> {
         .await?;
 
     println!("api base: {api_base}");
-    if let Some(url) = &quic_override_url {
-        println!("quic override: {url}");
+    println!("quic override: {}", quic_override_url.as_deref().unwrap_or(""));
+    println!("remote host: {}", config.remote_host);
+    if let Some(remote_ip) = &config.remote_ip {
+        println!("remote ip override: {remote_ip}");
     }
     println!("samples: {samples}");
     println!("mode: datagram one-way latency from client A to client B via server");

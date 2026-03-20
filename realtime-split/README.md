@@ -53,6 +53,8 @@ just rtt-remote
 
 This measures post-connect QUIC datagram one-way latency by connecting two clients to the same room and timing `client A -> server -> client B` on a shared local clock.
 
+Prebuilt tester binaries for macOS, Windows, and Linux can be generated from the GitHub Actions workflow `Build Remote RTT Binaries`. Pushing a tag like `remote-rtt-v1.0.0` will also attach those binaries to a GitHub Release automatically. The packaged tester instructions live in `docs/remote-rtt-testers.txt`.
+
 ## Exposed ports
 - `8080/tcp`: API server
 - `4433/udp`: QUIC realtime

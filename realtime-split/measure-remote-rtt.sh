@@ -45,7 +45,21 @@ echo "remote host: ${REMOTE_HOST} (${REMOTE_IP})"
 echo "api base: ${API_BASE_URL}"
 echo "quic override: ${QUIC_OVERRIDE_URL}"
 
-RTT_SAMPLES="$RTT_SAMPLES" \
-API_BASE_URL="$API_BASE_URL" \
-QUIC_OVERRIDE_URL="$QUIC_OVERRIDE_URL" \
-cargo run -p kotatsu-test-client --bin remote-rtt
+cmd=(
+  cargo run -p kotatsu-test-client --bin remote-rtt --
+  --host "$REMOTE_HOST"
+  --remote-ip "$REMOTE_IP"
+  --api-port "$API_PORT"
+  --quic-port "$QUIC_PORT"
+  --samples "$RTT_SAMPLES"
+)
+
+if [[ -n "${API_BASE_URL:-}" ]]; then
+  cmd+=(--api-base-url "$API_BASE_URL")
+fi
+
+if [[ -n "${QUIC_OVERRIDE_URL:-}" ]]; then
+  cmd+=(--quic-url "$QUIC_OVERRIDE_URL")
+fi
+
+"${cmd[@]}"
