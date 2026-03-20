@@ -1,0 +1,8 @@
+FROM alpine:3.23
+
+RUN apk add --no-cache bash curl jq ca-certificates
+
+WORKDIR /app
+COPY scripts/cloudflare-ddns-update.sh /app/scripts/cloudflare-ddns-update.sh
+
+ENTRYPOINT ["bash", "/app/scripts/cloudflare-ddns-update.sh"]

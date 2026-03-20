@@ -11,9 +11,9 @@ as_root() {
   if [ "$(id -u)" -eq 0 ]; then
     "$@"
   elif command -v doas >/dev/null 2>&1; then
-    doas "$@"
+    doas -n "$@"
   elif command -v sudo >/dev/null 2>&1; then
-    sudo "$@"
+    sudo -n "$@"
   else
     return 127
   fi
@@ -21,6 +21,15 @@ as_root() {
 
 warn_root_skip() {
   echo "warning: skipping ${1}; root, doas, or sudo is required" >&2
+}
+
+require_root() {
+  if as_root true >/dev/null 2>&1; then
+    return 0
+  fi
+
+  echo "error: ${1} requires non-interactive root privileges" >&2
+  return 1
 }
 
 install_sysctl() {
@@ -54,10 +63,13 @@ install_openrc_boot_hook() {
     return 1
   fi
 
-  if ! as_root true >/dev/null 2>&1; then
-    warn_root_skip "OpenRC boot hook"
-    return 0
+  if [ -x /etc/local.d/kotatsu.start ] && [ -x /etc/local.d/kotatsu.stop ]; then
+    if rc-update show 2>/dev/null | grep -Eq '(^|[[:space:]])local([[:space:]]|$)'; then
+      return 0
+    fi
   fi
+
+  require_root "OpenRC boot hook installation"
 
   start_tmp="$(mktemp)"
   stop_tmp="$(mktemp)"
@@ -77,6 +89,10 @@ EOF
   rm -f "${start_tmp}" "${stop_tmp}"
 
   as_root rc-update add local default >/dev/null 2>&1 || true
+
+  as_root test -x /etc/local.d/kotatsu.start
+  as_root test -x /etc/local.d/kotatsu.stop
+  rc-update show 2>/dev/null | grep -Eq '(^|[[:space:]])local([[:space:]]|$)'
 }
 
 install_systemd_boot_hook() {
@@ -88,10 +104,13 @@ install_systemd_boot_hook() {
     return 1
   fi
 
-  if ! as_root true >/dev/null 2>&1; then
-    warn_root_skip "systemd boot hook"
-    return 0
+  if [ -f /etc/systemd/system/kotatsu-backend.service ]; then
+    if systemctl is-enabled kotatsu-backend.service >/dev/null 2>&1; then
+      return 0
+    fi
   fi
+
+  require_root "systemd boot hook installation"
 
   unit_tmp="$(mktemp)"
 
@@ -116,16 +135,20 @@ EOF
 
   as_root systemctl daemon-reload
   as_root systemctl enable kotatsu-backend.service >/dev/null
+  as_root systemctl is-enabled kotatsu-backend.service >/dev/null
 }
 
 main() {
   install_sysctl
 
-  if install_openrc_boot_hook; then
+  if command -v podman >/dev/null 2>&1 && command -v rc-update >/dev/null 2>&1 && [ -d /etc/local.d ]; then
+    install_openrc_boot_hook
     return 0
   fi
 
-  install_systemd_boot_hook || true
+  if command -v podman >/dev/null 2>&1 && command -v systemctl >/dev/null 2>&1; then
+    install_systemd_boot_hook
+  fi
 }
 
 main "$@"
