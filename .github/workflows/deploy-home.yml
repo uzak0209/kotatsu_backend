@@ -78,12 +78,21 @@ jobs:
             set -eu
 
             failed=0
+            if [ -f "${APP_DIR}/.env.selfhost" ]; then
+              set -a
+              . "${APP_DIR}/.env.selfhost"
+              set +a
+            fi
 
-            echo 'Checking listeners for 8080/tcp, 4433/udp, 50051/tcp:'
+            API_PORT_EFFECTIVE="${API_PORT:-8080}"
+            UDP_PORT_EFFECTIVE="${UDP_PORT:-4433}"
+            GRPC_PORT_EFFECTIVE="${GRPC_PORT:-50051}"
+
+            echo "Checking listeners for ${API_PORT_EFFECTIVE}/tcp, ${UDP_PORT_EFFECTIVE}/udp, ${GRPC_PORT_EFFECTIVE}/tcp:"
             if command -v ss >/dev/null 2>&1; then
-              ss -lntup | grep -E '(:8080|:4433|:50051)' || echo 'No matching listeners'
+              ss -lntup | grep -E "(:${API_PORT_EFFECTIVE}|:${UDP_PORT_EFFECTIVE}|:${GRPC_PORT_EFFECTIVE})" || echo 'No matching listeners'
             else
-              netstat -lntup 2>/dev/null | grep -E '(:8080|:4433|:50051)' || echo 'No matching listeners'
+              netstat -lntup 2>/dev/null | grep -E "(:${API_PORT_EFFECTIVE}|:${UDP_PORT_EFFECTIVE}|:${GRPC_PORT_EFFECTIVE})" || echo 'No matching listeners'
             fi
             echo ''
 
@@ -132,11 +141,47 @@ jobs:
               fi
             fi
 
-            if ! curl -fsS http://127.0.0.1:8080/health >/dev/null 2>&1; then
-              echo 'ERROR: API health check failed'
+            health_url="http://127.0.0.1:${API_PORT_EFFECTIVE}/health"
+            check_health() {
+              url="$1"
+              if command -v curl >/dev/null 2>&1; then
+                curl -fsS "$url" >/dev/null 2>&1
+                return $?
+              fi
+              if command -v wget >/dev/null 2>&1; then
+                wget -q -T 2 -O /dev/null "$url" >/dev/null 2>&1
+                return $?
+              fi
+              return 127
+            }
+
+            if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
+              echo 'ERROR: neither curl nor wget is available for API health check'
               failed=1
             else
-              echo 'API health check: OK'
+              health_ok=0
+              attempt=1
+              max_attempts=20
+              while [ "${attempt}" -le "${max_attempts}" ]; do
+                if check_health "${health_url}"; then
+                  echo "API health check: OK (${health_url})"
+                  health_ok=1
+                  break
+                fi
+                echo "waiting for API health (${attempt}/${max_attempts})..."
+                sleep 1
+                attempt=$((attempt + 1))
+              done
+
+              if [ "${health_ok}" -ne 1 ]; then
+                echo "ERROR: API health check failed (${health_url})"
+                if command -v curl >/dev/null 2>&1; then
+                  curl -sS "${health_url}" || true
+                elif command -v wget >/dev/null 2>&1; then
+                  wget -qO- "${health_url}" || true
+                fi
+                failed=1
+              fi
             fi
 
             if [ "${failed}" -ne 0 ]; then
