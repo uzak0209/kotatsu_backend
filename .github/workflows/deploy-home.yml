@@ -40,6 +40,24 @@ jobs:
               echo "❌ UDP_PUBLIC_URL must use udp:// scheme"
               exit 1
             fi
+
+            API_PORT_VALUE="$(awk -F= '/^API_PORT=/{print $2}' .env.selfhost | tail -n 1)"
+            UDP_PORT_VALUE="$(awk -F= '/^UDP_PORT=/{print $2}' .env.selfhost | tail -n 1)"
+            GRPC_PORT_VALUE="$(awk -F= '/^GRPC_PORT=/{print $2}' .env.selfhost | tail -n 1)"
+
+            API_PORT_VALUE="${API_PORT_VALUE:-8080}"
+            UDP_PORT_VALUE="${UDP_PORT_VALUE:-4433}"
+            GRPC_PORT_VALUE="${GRPC_PORT_VALUE:-50051}"
+
+            if [ "${UDP_PORT_VALUE}" = "${GRPC_PORT_VALUE}" ]; then
+              echo "❌ UDP_PORT and GRPC_PORT must be different"
+              exit 1
+            fi
+            if [ "${API_PORT_VALUE}" = "${UDP_PORT_VALUE}" ] || [ "${API_PORT_VALUE}" = "${GRPC_PORT_VALUE}" ]; then
+              echo "❌ API_PORT must be different from UDP_PORT and GRPC_PORT"
+              exit 1
+            fi
+            echo "✓ Port config sanity check passed"
           else
             echo "❌ UDP_PUBLIC_URL NOT found in env file"
             echo "File contains:"

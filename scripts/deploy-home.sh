@@ -46,6 +46,26 @@ ssh "${SSH_OPTS[@]}" "${SSH_TARGET}" "
 set -e
 cd '${APP_DIR}'
 
+# Load deploy env so port checks match runtime settings.
+if [ -f ./.env.selfhost ]; then
+  set -a
+  . ./.env.selfhost
+  set +a
+fi
+
+API_PORT_EFFECTIVE=\"\${API_PORT:-8080}\"
+UDP_PORT_EFFECTIVE=\"\${UDP_PORT:-4433}\"
+GRPC_PORT_EFFECTIVE=\"\${GRPC_PORT:-50051}\"
+
+if [ \"\$UDP_PORT_EFFECTIVE\" = \"\$GRPC_PORT_EFFECTIVE\" ]; then
+  echo \"invalid config: UDP_PORT (\$UDP_PORT_EFFECTIVE) must differ from GRPC_PORT (\$GRPC_PORT_EFFECTIVE)\" >&2
+  exit 1
+fi
+if [ \"\$API_PORT_EFFECTIVE\" = \"\$UDP_PORT_EFFECTIVE\" ] || [ \"\$API_PORT_EFFECTIVE\" = \"\$GRPC_PORT_EFFECTIVE\" ]; then
+  echo \"invalid config: API_PORT (\$API_PORT_EFFECTIVE) must differ from UDP_PORT/GRPC_PORT\" >&2
+  exit 1
+fi
+
 # Stop all running containers first
 echo 'Stopping existing containers...'
 if command -v podman >/dev/null 2>&1; then
@@ -185,9 +205,9 @@ force_free_port() {
   echo \"port \$label is now free\"
 }
 
-force_free_port tcp \"\${API_PORT:-8080}\"
-force_free_port udp \"\${UDP_PORT:-4433}\"
-force_free_port tcp \"\${GRPC_PORT:-50051}\"
+force_free_port tcp \"\$API_PORT_EFFECTIVE\"
+force_free_port udp \"\$UDP_PORT_EFFECTIVE\"
+force_free_port tcp \"\$GRPC_PORT_EFFECTIVE\"
 
 ./scripts/install-home-runtime.sh '${APP_DIR}'
 
