@@ -34,10 +34,17 @@ jobs:
           if grep -q "UDP_PUBLIC_URL" .env.selfhost; then
             echo "✓ UDP_PUBLIC_URL found in env file"
             grep "UDP_PUBLIC_URL" .env.selfhost | sed 's/=.*/=***/'
+            if grep -Eq '^UDP_PUBLIC_URL=udp://[^[:space:]]+$' .env.selfhost; then
+              echo "✓ UDP_PUBLIC_URL uses udp:// scheme"
+            else
+              echo "❌ UDP_PUBLIC_URL must use udp:// scheme"
+              exit 1
+            fi
           else
             echo "❌ UDP_PUBLIC_URL NOT found in env file"
             echo "File contains:"
             cat .env.selfhost | sed 's/=.*/=***/'
+            exit 1
           fi
       - name: Write sysctl file
         if: ${{ env.HOME_SERVER_SYSCTL != '' }}
@@ -48,10 +55,20 @@ jobs:
       - name: Check container status
         run: |
           echo "Checking container status..."
-          ssh -p "${HOME_SERVER_SSH_PORT:-22}" "${HOME_SERVER_USER}@${HOME_SERVER_HOST}" "
-            echo 'Checking what is using port 4433:'
-            sudo lsof -i :4433 || echo 'No process using port 4433'
+          APP_DIR="${HOME_SERVER_APP_DIR:-/home/${HOME_SERVER_USER}/kotatsu-backend}"
+          ssh -p "${HOME_SERVER_SSH_PORT:-22}" "${HOME_SERVER_USER}@${HOME_SERVER_HOST}" "APP_DIR='${APP_DIR}' bash -s" <<'REMOTE'
+            set -euo pipefail
+
+            failed=0
+
+            echo 'Checking listeners for 8080/tcp, 4433/udp, 50051/tcp:'
+            if command -v ss >/dev/null 2>&1; then
+              ss -lntup | grep -E '(:8080|:4433|:50051)' || echo 'No matching listeners'
+            else
+              netstat -lntup 2>/dev/null | grep -E '(:8080|:4433|:50051)' || echo 'No matching listeners'
+            fi
             echo ''
+
             if command -v podman >/dev/null 2>&1; then
               echo 'Running containers:'
               podman ps
@@ -59,9 +76,20 @@ jobs:
               echo 'All containers (including stopped):'
               podman ps -a
               echo ''
-              echo 'Realtime server logs (last 30 lines):'
-              sleep 2
-              podman logs kotatsu-backend-realtime --tail 30 2>&1 || echo 'Container not found'
+              echo 'Realtime server logs (last 50 lines):'
+              podman logs kotatsu-backend-realtime --tail 50 2>&1 || true
+              echo ''
+              echo 'API server logs (last 50 lines):'
+              podman logs kotatsu-backend-api --tail 50 2>&1 || true
+
+              if ! podman inspect -f '{{.State.Running}}' kotatsu-backend-realtime 2>/dev/null | grep -qx true; then
+                echo 'ERROR: realtime container is not running'
+                failed=1
+              fi
+              if ! podman inspect -f '{{.State.Running}}' kotatsu-backend-api 2>/dev/null | grep -qx true; then
+                echo 'ERROR: api container is not running'
+                failed=1
+              fi
             else
               echo 'Running containers:'
               docker ps
@@ -69,8 +97,32 @@ jobs:
               echo 'All containers (including stopped):'
               docker ps -a
               echo ''
-              echo 'Realtime server logs (last 30 lines):'
-              sleep 2
-              docker logs realtime --tail 30 2>&1 || docker compose -f ${HOME_SERVER_APP_DIR:-/home/${HOME_SERVER_USER}/kotatsu-backend}/docker-compose.yml logs realtime --tail 30
+              echo 'Realtime server logs (last 50 lines):'
+              docker logs realtime --tail 50 2>&1 || docker compose -f "${APP_DIR}/docker-compose.yml" logs realtime --tail 50 || true
+              echo ''
+              echo 'API server logs (last 50 lines):'
+              docker logs api --tail 50 2>&1 || docker compose -f "${APP_DIR}/docker-compose.yml" logs api --tail 50 || true
+
+              running_services="$(docker compose -f "${APP_DIR}/docker-compose.yml" ps --status running --services 2>/dev/null || true)"
+              if ! printf '%s\n' "${running_services}" | grep -qx realtime; then
+                echo 'ERROR: realtime service is not running'
+                failed=1
+              fi
+              if ! printf '%s\n' "${running_services}" | grep -qx api; then
+                echo 'ERROR: api service is not running'
+                failed=1
+              fi
             fi
-          " || echo "Could not fetch status"
+
+            if ! curl -fsS http://127.0.0.1:8080/health >/dev/null 2>&1; then
+              echo 'ERROR: API health check failed'
+              failed=1
+            else
+              echo 'API health check: OK'
+            fi
+
+            if [ "${failed}" -ne 0 ]; then
+              echo 'Deployment health check failed'
+              exit 1
+            fi
+          REMOTE

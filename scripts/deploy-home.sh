@@ -59,6 +59,31 @@ else
   sleep 2
 fi
 
+echo 'Checking required ports before startup...'
+check_port_free() {
+  local proto=\"\$1\"
+  local port=\"\$2\"
+  if command -v ss >/dev/null 2>&1; then
+    if [ \"\$proto\" = \"udp\" ]; then
+      if ss -H -lun \"sport = :\$port\" | grep -q .; then
+        echo \"port \$port/\$proto is already in use\" >&2
+        ss -lun \"sport = :\$port\" || true
+        return 1
+      fi
+    else
+      if ss -H -ltn \"sport = :\$port\" | grep -q .; then
+        echo \"port \$port/\$proto is already in use\" >&2
+        ss -ltn \"sport = :\$port\" || true
+        return 1
+      fi
+    fi
+  fi
+}
+
+check_port_free tcp \"\${API_PORT:-8080}\"
+check_port_free udp \"\${UDP_PORT:-4433}\"
+check_port_free tcp \"\${GRPC_PORT:-50051}\"
+
 ./scripts/install-home-runtime.sh '${APP_DIR}'
 
 if command -v podman >/dev/null 2>&1; then
