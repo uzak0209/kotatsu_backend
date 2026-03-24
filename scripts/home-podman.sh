@@ -73,8 +73,8 @@ run_api() {
 }
 
 recreate() {
-  podman build -f Dockerfile.realtime -t "${REALTIME_IMAGE}" .
-  podman build -f Dockerfile.api -t "${API_IMAGE}" .
+  podman build --no-cache -f Dockerfile.realtime -t "${REALTIME_IMAGE}" .
+  podman build --no-cache -f Dockerfile.api -t "${API_IMAGE}" .
   run_realtime
   run_api
 }
