@@ -69,20 +69,14 @@ fi
 # If passwordless sudo is available, also clean up root-owned leftovers.
 if sudo -n true >/dev/null 2>&1; then
   echo 'sudo -n available: running root-level cleanup...'
-  sudo -n env \
-    API_PORT_EFFECTIVE=\"\$API_PORT_EFFECTIVE\" \
-    UDP_PORT_EFFECTIVE=\"\$UDP_PORT_EFFECTIVE\" \
-    GRPC_PORT_EFFECTIVE=\"\$GRPC_PORT_EFFECTIVE\" \
-    sh -c '
-      if command -v podman >/dev/null 2>&1; then
-        podman stop kotatsu-backend-realtime kotatsu-backend-api >/dev/null 2>&1 || true
-        podman rm kotatsu-backend-realtime kotatsu-backend-api >/dev/null 2>&1 || true
-      fi
+  if command -v podman >/dev/null 2>&1; then
+    sudo -n podman stop kotatsu-backend-realtime kotatsu-backend-api >/dev/null 2>&1 || true
+    sudo -n podman rm kotatsu-backend-realtime kotatsu-backend-api >/dev/null 2>&1 || true
+  fi
 
-      if command -v fuser >/dev/null 2>&1; then
-        fuser -k "\${API_PORT_EFFECTIVE}/tcp" "\${UDP_PORT_EFFECTIVE}/udp" "\${GRPC_PORT_EFFECTIVE}/tcp" >/dev/null 2>&1 || true
-      fi
-    '
+  if command -v fuser >/dev/null 2>&1; then
+    sudo -n fuser -k \"\${API_PORT_EFFECTIVE}/tcp\" \"\${UDP_PORT_EFFECTIVE}/udp\" \"\${GRPC_PORT_EFFECTIVE}/tcp\" >/dev/null 2>&1 || true
+  fi
 else
   echo 'sudo -n not available: root-level cleanup skipped'
 fi
