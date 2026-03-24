@@ -73,8 +73,17 @@ run_api() {
 }
 
 recreate() {
+  # Stop and remove old containers first
+  podman stop -t 10 "${REALTIME_CONTAINER}" >/dev/null 2>&1 || true
+  podman rm "${REALTIME_CONTAINER}" >/dev/null 2>&1 || true
+  podman stop -t 10 "${API_CONTAINER}" >/dev/null 2>&1 || true
+  podman rm "${API_CONTAINER}" >/dev/null 2>&1 || true
+
+  # Build fresh images
   podman build --no-cache -f Dockerfile.realtime -t "${REALTIME_IMAGE}" .
   podman build --no-cache -f Dockerfile.api -t "${API_IMAGE}" .
+
+  # Start new containers
   run_realtime
   run_api
 }
