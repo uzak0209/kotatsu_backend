@@ -56,7 +56,8 @@ run_realtime() {
     --restart always \
     --env-file .env.selfhost \
     -e "GRPC_ADDR=0.0.0.0:${GRPC_PORT:-50051}" \
-    -e "QUIC_BIND_ADDR=0.0.0.0:${QUIC_PORT:-4433}" \
+    -e "UDP_BIND_ADDR=0.0.0.0:${UDP_PORT:-4433}" \
+    -e "UDP_PUBLIC_URL=${UDP_PUBLIC_URL:-udp://127.0.0.1:4433}" \
     "${REALTIME_IMAGE}"
 }
 
