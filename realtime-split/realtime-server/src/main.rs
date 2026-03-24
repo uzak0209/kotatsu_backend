@@ -32,7 +32,10 @@ async fn main() -> Result<()> {
         .parse()?;
     let udp_public_url = std::env::var("UDP_PUBLIC_URL").unwrap_or_else(|_| {
         let host = std::env::var("PUBLIC_HOSTNAME").unwrap_or_else(|_| "127.0.0.1".into());
-        let port = std::env::var("UDP_PORT").unwrap_or_else(|_| "4433".into());
+        // Support both UDP_PORT and QUIC_PORT for backward compatibility
+        let port = std::env::var("UDP_PORT")
+            .or_else(|_| std::env::var("QUIC_PORT"))
+            .unwrap_or_else(|_| "4433".into());
         format!("udp://{host}:{port}")
     });
 
