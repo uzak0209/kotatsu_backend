@@ -45,3 +45,13 @@ jobs:
           printf '%s\n' '${{ env.HOME_SERVER_SYSCTL }}' > .sysctl.selfhost
       - name: Deploy
         run: ./scripts/deploy-home.sh "${HOME_SERVER_HOST}" "${HOME_SERVER_USER}" "${HOME_SERVER_APP_DIR:-/home/${HOME_SERVER_USER}/kotatsu-backend}" "${HOME_SERVER_SSH_PORT:-22}"
+      - name: Check container logs
+        run: |
+          echo "Checking realtime-server container logs..."
+          ssh -p "${HOME_SERVER_SSH_PORT:-22}" "${HOME_SERVER_USER}@${HOME_SERVER_HOST}" "
+            if command -v podman >/dev/null 2>&1; then
+              podman logs kotatsu-backend-realtime --tail 20
+            else
+              docker logs realtime-server --tail 20 2>&1 || docker compose -f ${HOME_SERVER_APP_DIR:-/home/${HOME_SERVER_USER}/kotatsu-backend}/docker-compose.yml logs realtime --tail 20
+            fi
+          " || echo "Could not fetch logs"
