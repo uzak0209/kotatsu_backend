@@ -49,9 +49,15 @@ jobs:
         run: |
           echo "Checking container status..."
           ssh -p "${HOME_SERVER_SSH_PORT:-22}" "${HOME_SERVER_USER}@${HOME_SERVER_HOST}" "
+            echo 'Checking what is using port 4433:'
+            sudo lsof -i :4433 || echo 'No process using port 4433'
+            echo ''
             if command -v podman >/dev/null 2>&1; then
               echo 'Running containers:'
               podman ps
+              echo ''
+              echo 'All containers (including stopped):'
+              podman ps -a
               echo ''
               echo 'Realtime server logs (last 30 lines):'
               sleep 2
@@ -59,6 +65,9 @@ jobs:
             else
               echo 'Running containers:'
               docker ps
+              echo ''
+              echo 'All containers (including stopped):'
+              docker ps -a
               echo ''
               echo 'Realtime server logs (last 30 lines):'
               sleep 2
