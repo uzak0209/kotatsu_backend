@@ -49,6 +49,7 @@ cd '${APP_DIR}'
 if command -v podman >/dev/null 2>&1; then
   ./scripts/home-podman.sh recreate '${APP_DIR}'
 else
-  docker compose up -d --build
+  docker compose build --no-cache
+  docker compose up -d --force-recreate
 fi
 "
