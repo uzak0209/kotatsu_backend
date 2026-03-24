@@ -28,6 +28,17 @@ jobs:
       - name: Write env file
         run: |
           printf '%s\n' '${{ secrets.HOME_SERVER_ENV }}' > .env.selfhost
+      - name: Verify env file
+        run: |
+          echo "Checking .env.selfhost contents..."
+          if grep -q "UDP_PUBLIC_URL" .env.selfhost; then
+            echo "✓ UDP_PUBLIC_URL found in env file"
+            grep "UDP_PUBLIC_URL" .env.selfhost | sed 's/=.*/=***/'
+          else
+            echo "❌ UDP_PUBLIC_URL NOT found in env file"
+            echo "File contains:"
+            cat .env.selfhost | sed 's/=.*/=***/'
+          fi
       - name: Write sysctl file
         if: ${{ env.HOME_SERVER_SYSCTL != '' }}
         run: |
