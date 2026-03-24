@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Kotatsu Backend - 技術選定の記録</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="print-hint">PDF出力: Ctrl+P (Cmd+P) → 横向き、余白なし、背景グラフィック有効</div>
+
+    <div class="slides">
+      <!-- Slide 1: タイトル -->
+      <section class="slide">
+        <div class="slide-number">1</div>
+        <h1 class="slide-title">Kotatsu Backend<br/>技術選定の記録</h1>
+        <p class="slide-subtitle">
+          リアルタイム対戦ゲームのための通信プロトコルとインフラの選定過程
+        </p>
+        <div class="meta-info">
+          <div class="meta-item">2026年3月</div>
+          <div class="meta-item">32ms tick target</div>
+          <div class="meta-item">4 players multiplayer</div>
+        </div>
+      </section>
+
+      <!-- Slide 2: 要件 -->
+      <section class="slide">
+        <div class="slide-number">2</div>
+        <h2 class="slide-heading">要件</h2>
+        <div class="content-box">
+          <h3>必要な性能</h3>
+          <ul class="bullet-list">
+            <li>32ms（31.25Hz）のtick rateでサーバーが状態を更新</li>
+            <li>4人同時対戦</li>
+            <li>サーバー authoritative なアーキテクチャ</li>
+            <li>低レイテンシ（目標: 20-30ms程度）</li>
+          </ul>
+        </div>
+        <div class="content-box">
+          <h3>技術的課題</h3>
+          <ul class="bullet-list">
+            <li>Unity クライアントからアクセス可能である必要</li>
+            <li>TCPでは Head-of-Line blocking が懸念</li>
+            <li>インフラコストを抑えたい</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- Slide 3: 通信プロトコルの検討 (1) WebSocket -->
+      <section class="slide">
+        <div class="slide-number">3</div>
+        <h2 class="slide-heading">通信プロトコルの検討 ①</h2>
+        <h3 class="section-title">WebSocket (TCP)</h3>
+
+        <div class="two-column">
+          <div class="content-box">
+            <h4>TCP とは</h4>
+            <p>Transmission Control Protocol。信頼性のある順序保証された通信。</p>
+            <ul class="bullet-list small">
+              <li>パケットロスが発生したら再送</li>
+              <li>順序が保証される</li>
+              <li>遅延が発生しやすい（Head-of-Line blocking）</li>
+            </ul>
+          </div>
+
+          <div class="content-box">
+            <h4>検討結果</h4>
+            <div class="decision-box reject">
+              <div class="decision-label">❌ 却下</div>
+              <p><strong>理由:</strong> TCPのHead-of-Line blockingにより、1つのパケットロスが全体の遅延を引き起こす。32msのtick rateには不十分。</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="note-box">
+          <strong>Head-of-Line blocking:</strong> TCPでは、パケットが順序通りに到着する必要があるため、1つのパケットが遅延すると後続のパケットも待たされる問題。
+        </div>
+      </section>
+
+      <!-- Slide 4: 通信プロトコルの検討 (2) WebTransport -->
+      <section class="slide">
+        <div class="slide-number">4</div>
+        <h2 class="slide-heading">通信プロトコルの検討 ②</h2>
+        <h3 class="section-title">WebTransport (HTTP/3)</h3>
+
+        <div class="two-column">
+          <div class="content-box">
+            <h4>WebTransport とは</h4>
+            <p>HTTP/3（QUIC上）で動作する双方向通信プロトコル。ブラウザ向けに設計。</p>
+            <ul class="bullet-list small">
+              <li>UDPベース</li>
+              <li>複数のストリームを独立して管理</li>
+              <li>低レイテンシ</li>
+            </ul>
+          </div>
+
+          <div class="content-box">
+            <h4>検討結果</h4>
+            <div class="decision-box reject">
+              <div class="decision-label">❌ 却下</div>
+              <p><strong>理由:</strong> Unityでの公式サポートがない。サードパーティライブラリも未成熟。</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Slide 5: UDP と QUIC の基礎 -->
+      <section class="slide">
+        <div class="slide-number">5</div>
+        <h2 class="slide-heading">通信プロトコルの検討 ③</h2>
+        <h3 class="section-title">UDP と QUIC の基礎</h3>
+
+        <div class="two-column">
+          <div class="content-box">
+            <h4>UDP とは</h4>
+            <p>User Datagram Protocol。軽量で高速な通信プロトコル。</p>
+            <ul class="bullet-list small">
+              <li>パケットロスしても再送しない</li>
+              <li>順序保証なし</li>
+              <li>低レイテンシ</li>
+              <li>オーバーヘッドが少ない</li>
+            </ul>
+          </div>
+
+          <div class="content-box">
+            <h4>QUIC とは</h4>
+            <p>UDPベースで、必要に応じて信頼性を提供するプロトコル。</p>
+            <ul class="bullet-list small">
+              <li>複数の独立したストリーム（Reliable）</li>
+              <li>Datagram（Unreliable）</li>
+              <li>HOL blockingを回避</li>
+              <li>暗号化が標準で組み込まれている</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="note-box">
+          <strong>ポイント:</strong> TCPの信頼性が必要な部分とUDPの速度が必要な部分を、1つのプロトコルで使い分けできる。
+        </div>
+      </section>
+
+      <!-- Slide 6: QUIC の採用 -->
+      <section class="slide">
+        <div class="slide-number">6</div>
+        <h2 class="slide-heading">通信プロトコルの検討 ③</h2>
+        <h3 class="section-title">QUIC の採用決定</h3>
+
+        <div class="decision-box accept">
+          <div class="decision-label">✓ 採用</div>
+          <p><strong>理由:</strong> 低レイテンシを実現でき、Unity側でもネイティブUDPソケットを使用して実装可能。</p>
+        </div>
+
+        <div class="content-box">
+          <h4>通信の使い分け戦略</h4>
+          <div class="two-column">
+            <div class="highlight-box">
+              <h5>QUIC Stream (Reliable)</h5>
+              <ul class="bullet-list small">
+                <li>プレイヤーの参加通知</li>
+                <li>パラメータ変更</li>
+                <li>重要なイベント</li>
+              </ul>
+              <p style="margin-top: 0.75rem;"><strong>→ 絶対に届く必要がある通信</strong></p>
+            </div>
+
+            <div class="highlight-box">
+              <h5>QUIC Datagram (Unreliable)</h5>
+              <ul class="bullet-list small">
+                <li>位置座標の更新</li>
+                <li>リアルタイム状態同期</li>
+                <li>頻繁な更新データ</li>
+              </ul>
+              <p style="margin-top: 0.75rem;"><strong>→ 多少落ちても問題ない通信</strong></p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Slide 7: 実装言語の比較 -->
+      <section class="slide">
+        <div class="slide-number">8</div>
+        <h2 class="slide-heading">実装言語の比較</h2>
+        <h3 class="section-title">TypeScript vs Rust</h3>
+
+        <div class="comparison-table">
+          <div class="comparison-header">
+            <div></div>
+            <div>TypeScript</div>
+            <div>Rust</div>
+          </div>
+
+          <div class="comparison-row">
+            <div class="row-label">開発速度</div>
+            <div class="cell good">◎ 速い</div>
+            <div class="cell neutral">○ やや時間がかかる</div>
+          </div>
+
+          <div class="comparison-row">
+            <div class="row-label">実行性能</div>
+            <div class="cell neutral">○ Node.js の制約あり</div>
+            <div class="cell good">◎ ネイティブで高速</div>
+          </div>
+
+          <div class="comparison-row">
+            <div class="row-label">型安全性</div>
+            <div class="cell neutral">○ ランタイムエラーあり</div>
+            <div class="cell good">◎ コンパイル時チェック</div>
+          </div>
+
+          <div class="comparison-row">
+            <div class="row-label">QUIC ライブラリ</div>
+            <div class="cell neutral">△ 選択肢少</div>
+            <div class="cell good">◎ Quinn（成熟）</div>
+          </div>
+        </div>
+
+        <div class="decision-box accept" style="margin-top: 2rem;">
+          <div class="decision-label">✓ Rust を採用</div>
+          <p><strong>理由:</strong> 実行性能が重要。型安全性によりバグを減らせる。Quinnライブラリが安定している。</p>
+        </div>
+      </section>
+
+      <!-- Slide 8: 実測結果 -->
+      <section class="slide">
+        <div class="slide-number">8</div>
+        <h2 class="slide-heading">実測結果</h2>
+
+        <div class="result-box highlight">
+          <h3>メンバーのWiFi環境でのテスト</h3>
+          <div class="metric-large">
+            <div class="metric-value">平均 20ms</div>
+            <div class="metric-label">Round Trip Time (RTT)</div>
+          </div>
+          <p class="result-note">4クライアント同時接続、32ms tick での動作確認済み</p>
+        </div>
+
+        <div class="content-box">
+          <h4>計測条件</h4>
+          <ul class="bullet-list">
+            <li>家庭用WiFi環境（実環境）</li>
+            <li>QUIC Datagram使用</li>
+            <li>サーバー: Rust (Quinn)</li>
+            <li>クライアント: テストクライアント（Rust）</li>
+          </ul>
+        </div>
+
+        <div class="note-box">
+          <strong>考察:</strong> 目標の32ms以内に収まっており、十分な性能が出ている。本番環境でも同等の性能が期待できる。
+        </div>
+      </section>
+
+      <!-- Slide 9: インフラの検討 (1) Cloudflare Workers -->
+      <section class="slide">
+        <div class="slide-number">9</div>
+        <h2 class="slide-heading">インフラの検討 ①</h2>
+        <h3 class="section-title">Cloudflare Workers</h3>
+
+        <div class="two-column">
+          <div class="content-box">
+            <h4>メリット</h4>
+            <ul class="bullet-list small">
+              <li>エッジで動作、低レイテンシ</li>
+              <li>スケーラブル</li>
+              <li>無料枠が充実</li>
+              <li>デプロイが簡単</li>
+            </ul>
+          </div>
+
+          <div class="content-box">
+            <h4>デメリット</h4>
+            <ul class="bullet-list small">
+              <li>UDPパケットを通さない</li>
+              <li>WebSocket は使えるがTCPベース</li>
+              <li>実行時間制限あり</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="decision-box reject">
+          <div class="decision-label">❌ 却下</div>
+          <p><strong>理由:</strong> UDPパケットが使えないため、QUICが動作しない。WebSocketはTCPベースでHOL blockingの問題が残る。</p>
+        </div>
+      </section>
+
+      <!-- Slide 10: インフラの検討 (2) AWS -->
+      <section class="slide">
+        <div class="slide-number">10</div>
+        <h2 class="slide-heading">インフラの検討 ②</h2>
+        <h3 class="section-title">AWS (EC2)</h3>
+
+        <div class="two-column">
+          <div class="content-box">
+            <h4>メリット</h4>
+            <ul class="bullet-list small">
+              <li>完全な制御が可能</li>
+              <li>UDPポート開放可能</li>
+              <li>スペック選択の自由度</li>
+              <li>スケーリング容易</li>
+            </ul>
+          </div>
+
+          <div class="content-box">
+            <h4>デメリット</h4>
+            <ul class="bullet-list small">
+              <li>コストがかかる（月$10-50程度）</li>
+              <li>転送量課金</li>
+              <li>プロトタイプには高コスト</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="decision-box pending">
+          <div class="decision-label">△ 保留</div>
+          <p><strong>理由:</strong> 技術的には問題ないが、プロトタイプ段階でコストをかけたくない。本番展開時には検討の価値あり。</p>
+        </div>
+      </section>
+
+      <!-- Slide 11: インフラの検討 (3) オンプレミス -->
+      <section class="slide">
+        <div class="slide-number">11</div>
+        <h2 class="slide-heading">インフラの検討 ③</h2>
+        <h3 class="section-title">オンプレミス（自宅サーバー）</h3>
+
+        <div class="content-box">
+          <h4>課題: 動的IPアドレス</h4>
+          <p>家庭用インターネット回線は通常、IPアドレスが定期的に変わる。</p>
+        </div>
+
+        <div class="content-box">
+          <h4>解決策: DDNS (Dynamic DNS)</h4>
+          <p>DDNSとは、動的に変わるIPアドレスをドメイン名に自動的に紐付けるサービス。</p>
+        </div>
+
+        <div class="decision-box accept">
+          <div class="decision-label">✓ 採用</div>
+          <p><strong>理由:</strong> コストゼロ。既存ドメインを活用。DDNSで運用可能。プロトタイプに最適。</p>
+        </div>
+      </section>
+
+      <!-- Slide 12: DDNS の仕組み -->
+      <section class="slide">
+        <div class="slide-number">12</div>
+        <h2 class="slide-heading">DDNS の仕組み</h2>
+
+        <div class="flow-diagram">
+          <div class="flow-step">
+            <div class="step-number">1</div>
+            <div class="step-content">IPアドレスが変更される</div>
+          </div>
+          <div class="flow-arrow">↓</div>
+          <div class="flow-step">
+            <div class="step-number">2</div>
+            <div class="step-content">スクリプトが新しいIPを検知</div>
+          </div>
+          <div class="flow-arrow">↓</div>
+          <div class="flow-step">
+            <div class="step-number">3</div>
+            <div class="step-content">Cloudflare API経由でDNSレコード更新</div>
+          </div>
+          <div class="flow-arrow">↓</div>
+          <div class="flow-step">
+            <div class="step-number">4</div>
+            <div class="step-content">ドメインが常に最新のIPを指す</div>
+          </div>
+        </div>
+
+        <div class="note-box">
+          <strong>利点:</strong> 固定IPアドレスを契約しなくても、ドメイン名で常にサーバーにアクセスできる。
+        </div>
+      </section>
+
+      <!-- Slide 13: 最終構成 - 全体像 -->
+      <section class="slide">
+        <div class="slide-number">13</div>
+        <h2 class="slide-heading">最終構成 - 全体像</h2>
+
+        <div class="architecture-detailed">
+          <div class="arch-tier">
+            <div class="tier-box client-tier">
+              <div class="tier-label">クライアント</div>
+              <div class="tier-content">Unity</div>
+            </div>
+          </div>
+
+          <div class="arch-connection-line">
+            <div class="connection-label-main">QUIC over UDP</div>
+            <div class="connection-details">Stream: Join/Params | Datagram: Position</div>
+          </div>
+
+          <div class="arch-tier">
+            <div class="server-container">
+              <div class="container-label">自宅サーバー (Podman)</div>
+              <div class="server-grid">
+                <div class="tier-box api-tier">
+                  <div class="tier-label">API Server</div>
+                  <div class="tier-content">Axum + OpenAPI</div>
+                  <div class="tier-desc">Matchmaking</div>
+                </div>
+                <div class="grpc-connector">gRPC</div>
+                <div class="tier-box realtime-tier">
+                  <div class="tier-label">Realtime Server</div>
+                  <div class="tier-content">Quinn + Tonic</div>
+                  <div class="tier-desc">Game State</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="arch-connection-line">
+            <div class="connection-label-main">DDNS</div>
+            <div class="connection-details">Cloudflare DNS で動的IP更新</div>
+          </div>
+
+          <div class="arch-tier">
+            <div class="tier-box infra-tier">
+              <div class="tier-label">インフラ</div>
+              <div class="tier-content">家庭用回線 + 動的IP</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Slide 14: 技術スタック -->
+      <section class="slide">
+        <div class="slide-number">14</div>
+        <h2 class="slide-heading">技術スタック まとめ</h2>
+
+        <div class="tech-stack-grid">
+          <div class="stack-category">
+            <h3>通信プロトコル</h3>
+            <ul class="bullet-list">
+              <li><strong>外部:</strong> QUIC (Stream + Datagram)</li>
+              <li><strong>内部:</strong> gRPC</li>
+              <li>UDP ベース</li>
+            </ul>
+          </div>
+
+          <div class="stack-category">
+            <h3>言語 & ライブラリ</h3>
+            <ul class="bullet-list">
+              <li>Rust</li>
+              <li>Quinn (QUIC)</li>
+              <li>Tonic (gRPC)</li>
+              <li>Axum (HTTP API)</li>
+            </ul>
+          </div>
+
+          <div class="stack-category">
+            <h3>インフラ & 運用</h3>
+            <ul class="bullet-list">
+              <li>オンプレミス（自宅サーバー）</li>
+              <li>Podman コンテナ</li>
+              <li>Cloudflare DDNS</li>
+              <li>Boot hooks 自動起動</li>
+            </ul>
+          </div>
+
+          <div class="stack-category">
+            <h3>性能</h3>
+            <ul class="bullet-list">
+              <li>平均 20ms RTT</li>
+              <li>32ms tick 達成</li>
+              <li>4 players 同時接続</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="highlight-box" style="margin-top: 1rem;">
+          <p><strong>結果:</strong> コストゼロで低レイテンシのリアルタイム通信を実現。API ServerとRealtime ServerをgRPCで分離し、Podmanコンテナで管理。</p>
+        </div>
+      </section>
+
+      <!-- Slide 15: まとめ -->
+      <section class="slide">
+        <div class="slide-number">15</div>
+        <h2 class="slide-heading">まとめ</h2>
+
+        <div class="content-box">
+          <h3>技術選定の流れ</h3>
+          <ol class="numbered-list">
+            <li>WebSocket (TCP) → HOL blocking で却下</li>
+            <li>WebTransport → Unity サポートなしで却下</li>
+            <li>QUIC → 低レイテンシ、柔軟性で採用</li>
+            <li>Rust → 性能、型安全性で採用</li>
+            <li>オンプレミス + DDNS → コスト最適化で採用</li>
+          </ol>
+        </div>
+
+        <div class="content-box">
+          <h3>得られた知見</h3>
+          <ul class="bullet-list">
+            <li>通信の性質に応じて Reliable / Unreliable を使い分けることが重要</li>
+            <li>API と Realtime を分離し gRPC で内部通信することで責務が明確に</li>
+            <li>実環境でのテストが性能保証に不可欠</li>
+            <li>Podman コンテナで管理することで運用が容易に</li>
+            <li>DDNSにより固定IPなしでも外部公開が可能</li>
+          </ul>
+        </div>
+
+        <div class="highlight-box">
+          <p><strong>結果:</strong> 目標の32ms tickを実現し、平均20ms RTTで安定動作。Split Architecture + コンテナ化で保守性も確保。</p>
+        </div>
+      </section>
+    </div>
+
+    <script src="./slider.js"></script>
+  </body>
+</html>
