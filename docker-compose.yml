@@ -8,9 +8,10 @@ services:
     restart: unless-stopped
     environment:
       GRPC_ADDR: 0.0.0.0:${GRPC_PORT:-50051}
-      QUIC_BIND_ADDR: 0.0.0.0:${QUIC_PORT:-4433}
+      UDP_BIND_ADDR: 0.0.0.0:${UDP_PORT:-4433}
+      UDP_PUBLIC_URL: ${UDP_PUBLIC_URL:-udp://127.0.0.1:4433}
     ports:
-      - "${QUIC_PORT:-4433}:${QUIC_PORT:-4433}/udp"
+      - "${UDP_PORT:-4433}:${UDP_PORT:-4433}/udp"
 
   api:
     build:
