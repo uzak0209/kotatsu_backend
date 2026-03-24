@@ -45,11 +45,25 @@ scp "${SCP_OPTS[@]}" "${REPO_ROOT}/.env.selfhost" "${SSH_TARGET}:${APP_DIR}/.env
 ssh "${SSH_OPTS[@]}" "${SSH_TARGET}" "
 set -e
 cd '${APP_DIR}'
+
+# Stop all running containers first
+echo 'Stopping existing containers...'
+if command -v podman >/dev/null 2>&1; then
+  podman stop kotatsu-backend-realtime kotatsu-backend-api 2>/dev/null || true
+  podman rm kotatsu-backend-realtime kotatsu-backend-api 2>/dev/null || true
+  # Wait for ports to be released
+  sleep 2
+else
+  docker compose down
+  # Wait for ports to be released
+  sleep 2
+fi
+
 ./scripts/install-home-runtime.sh '${APP_DIR}'
+
 if command -v podman >/dev/null 2>&1; then
   ./scripts/home-podman.sh recreate '${APP_DIR}'
 else
-  docker compose down
   docker compose build --no-cache
   docker compose up -d
 fi
