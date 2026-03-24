@@ -80,7 +80,7 @@ if sudo -n true >/dev/null 2>&1; then
       fi
 
       if command -v fuser >/dev/null 2>&1; then
-        fuser -k "${API_PORT_EFFECTIVE}/tcp" "${UDP_PORT_EFFECTIVE}/udp" "${GRPC_PORT_EFFECTIVE}/tcp" >/dev/null 2>&1 || true
+        fuser -k "\${API_PORT_EFFECTIVE}/tcp" "\${UDP_PORT_EFFECTIVE}/udp" "\${GRPC_PORT_EFFECTIVE}/tcp" >/dev/null 2>&1 || true
       fi
     '
 else
