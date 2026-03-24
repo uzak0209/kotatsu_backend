@@ -59,30 +59,135 @@ else
   sleep 2
 fi
 
-echo 'Checking required ports before startup...'
-check_port_free() {
-  local proto=\"\$1\"
-  local port=\"\$2\"
+echo 'Force-freeing required ports before startup...'
+find_pids_on_port() {
+  proto=\"\$1\"
+  port=\"\$2\"
+  pids=\"\"
+
   if command -v ss >/dev/null 2>&1; then
     if [ \"\$proto\" = \"udp\" ]; then
-      if ss -H -lun \"sport = :\$port\" | grep -q .; then
-        echo \"port \$port/\$proto is already in use\" >&2
-        ss -lun \"sport = :\$port\" || true
-        return 1
-      fi
+      ss_out=\"\$(ss -H -lunp \"sport = :\$port\" 2>/dev/null || true)\"
     else
-      if ss -H -ltn \"sport = :\$port\" | grep -q .; then
-        echo \"port \$port/\$proto is already in use\" >&2
-        ss -ltn \"sport = :\$port\" || true
-        return 1
+      ss_out=\"\$(ss -H -ltnp \"sport = :\$port\" 2>/dev/null || true)\"
+    fi
+    ss_pids=\"\$(printf '%s\n' \"\$ss_out\" | sed -n 's/.*pid=\\([0-9][0-9]*\\).*/\\1/p' | sort -u)\"
+    if [ -n \"\$ss_pids\" ]; then
+      pids=\"\$ss_pids\"
+    fi
+  fi
+
+  if [ -z \"\$pids\" ] && command -v netstat >/dev/null 2>&1; then
+    ns_pids=\"\$(netstat -lnp 2>/dev/null | awk -v proto=\"\$proto\" -v target=\"\$port\" '
+      \$1 ~ proto {
+        n=split(\$4,a,\":\")
+        if (a[n] == target) {
+          split(\$7,b,\"/\")
+          if (b[1] ~ /^[0-9]+$/) print b[1]
+        }
+      }
+    ' | sort -u)\"
+    if [ -n \"\$ns_pids\" ]; then
+      pids=\"\$ns_pids\"
+    fi
+  fi
+
+  if [ -z \"\$pids\" ] && [ -r \"/proc/net/\$proto\" ]; then
+    hex_port=\"\$(printf '%04X' \"\$port\")\"
+    inodes=\"\$(awk -v want=\"\$hex_port\" 'NR>1 {
+      split(\$2, a, \":\");
+      if (toupper(a[2]) == want) print \$10;
+    }' \"/proc/net/\$proto\" 2>/dev/null | sort -u)\"
+    if [ -n \"\$inodes\" ]; then
+      found=\"\"
+      for pid_dir in /proc/[0-9]*; do
+        [ -d \"\$pid_dir/fd\" ] || continue
+        pid=\"\${pid_dir#/proc/}\"
+        for fd in \"\$pid_dir\"/fd/*; do
+          link=\"\$(readlink \"\$fd\" 2>/dev/null || true)\"
+          case \"\$link\" in
+            socket:\\[*\\])
+              inode=\"\${link#socket:[}\"
+              inode=\"\${inode%]}\"
+              if printf '%s\n' \"\$inodes\" | grep -qx \"\$inode\"; then
+                found=\"\$found \$pid\"
+                break
+              fi
+              ;;
+          esac
+        done
+      done
+      if [ -n \"\$found\" ]; then
+        pids=\"\$(printf '%s\n' \$found | sort -u)\"
       fi
     fi
   fi
+
+  printf '%s\n' \"\$pids\" | awk 'NF'
 }
 
-check_port_free tcp \"\${API_PORT:-8080}\"
-check_port_free udp \"\${UDP_PORT:-4433}\"
-check_port_free tcp \"\${GRPC_PORT:-50051}\"
+show_pid_details() {
+  pids=\"\$1\"
+  [ -n \"\$pids\" ] || return 0
+  for pid in \$pids; do
+    cmdline=\"\"
+    if [ -r \"/proc/\$pid/cmdline\" ]; then
+      cmdline=\"\$(tr '\\0' ' ' < \"/proc/\$pid/cmdline\" 2>/dev/null || true)\"
+    fi
+    if [ -z \"\$cmdline\" ] && [ -r \"/proc/\$pid/comm\" ]; then
+      cmdline=\"\$(cat \"/proc/\$pid/comm\" 2>/dev/null || true)\"
+    fi
+    if [ -n \"\$cmdline\" ]; then
+      echo \"  pid=\$pid cmd=\$cmdline\"
+    else
+      echo \"  pid=\$pid\"
+    fi
+  done
+}
+
+force_free_port() {
+  proto=\"\$1\"
+  port=\"\$2\"
+  label=\"\$port/\$proto\"
+
+  pids=\"\$(find_pids_on_port \"\$proto\" \"\$port\")\"
+  if [ -z \"\$pids\" ]; then
+    echo \"port \$label is already free\"
+    return 0
+  fi
+
+  echo \"port \$label is in use by:\"
+  show_pid_details \"\$pids\"
+
+  echo \"sending TERM to \$label owners...\"
+  for pid in \$pids; do
+    kill \"\$pid\" 2>/dev/null || true
+  done
+  sleep 1
+
+  remaining=\"\$(find_pids_on_port \"\$proto\" \"\$port\")\"
+  if [ -n \"\$remaining\" ]; then
+    echo \"sending KILL to remaining \$label owners...\"
+    show_pid_details \"\$remaining\"
+    for pid in \$remaining; do
+      kill -9 \"\$pid\" 2>/dev/null || true
+    done
+    sleep 1
+  fi
+
+  final=\"\$(find_pids_on_port \"\$proto\" \"\$port\")\"
+  if [ -n \"\$final\" ]; then
+    echo \"failed to free \$label\" >&2
+    show_pid_details \"\$final\"
+    return 1
+  fi
+
+  echo \"port \$label is now free\"
+}
+
+force_free_port tcp \"\${API_PORT:-8080}\"
+force_free_port udp \"\${UDP_PORT:-4433}\"
+force_free_port tcp \"\${GRPC_PORT:-50051}\"
 
 ./scripts/install-home-runtime.sh '${APP_DIR}'
 
