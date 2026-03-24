@@ -56,8 +56,8 @@ jobs:
         run: |
           echo "Checking container status..."
           APP_DIR="${HOME_SERVER_APP_DIR:-/home/${HOME_SERVER_USER}/kotatsu-backend}"
-          ssh -p "${HOME_SERVER_SSH_PORT:-22}" "${HOME_SERVER_USER}@${HOME_SERVER_HOST}" "APP_DIR='${APP_DIR}' bash -s" <<'REMOTE'
-            set -euo pipefail
+          ssh -p "${HOME_SERVER_SSH_PORT:-22}" "${HOME_SERVER_USER}@${HOME_SERVER_HOST}" "APP_DIR='${APP_DIR}' sh -s" <<'REMOTE'
+            set -eu
 
             failed=0
 
