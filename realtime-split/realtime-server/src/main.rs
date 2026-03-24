@@ -36,6 +36,8 @@ async fn main() -> Result<()> {
         format!("udp://{host}:{port}")
     });
 
+    info!("UDP public URL: {udp_public_url}");
+
     let st = AppState {
         core: Arc::new(Mutex::new(CoreState::default())),
         udp_public_url,
