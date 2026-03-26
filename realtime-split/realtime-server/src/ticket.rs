@@ -1,6 +1,6 @@
-use anyhow::{anyhow, Result};
 use crate::types::AppState;
 use crate::utils::now_unix;
+use anyhow::{anyhow, Result};
 
 pub(crate) async fn consume_ticket(st: &AppState, token: &str) -> Result<(String, String, String)> {
     let mut core = st.core.lock().await;

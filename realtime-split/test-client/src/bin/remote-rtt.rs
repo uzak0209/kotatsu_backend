@@ -9,7 +9,10 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use tokio::{net::lookup_host, time::{sleep, timeout}};
+use tokio::{
+    net::lookup_host,
+    time::{sleep, timeout},
+};
 use url::Url;
 
 const DEFAULT_HOST: &str = "kotatsu.ruxel.net";
@@ -111,7 +114,9 @@ fn parse_config() -> Result<Config> {
             .transpose()?
             .filter(|value| *value > 0)
             .unwrap_or(DEFAULT_SAMPLES),
-        api_base_url: env::var("API_BASE_URL").ok().filter(|value| !value.is_empty()),
+        api_base_url: env::var("API_BASE_URL")
+            .ok()
+            .filter(|value| !value.is_empty()),
         quic_override_url: env::var("QUIC_OVERRIDE_URL")
             .ok()
             .filter(|value| !value.is_empty()),
@@ -181,6 +186,11 @@ enum ServerReliable {
     JoinOk {
         match_id: String,
         player_id: String,
+        server_time_ms: u64,
+    },
+    MatchStarted {
+        match_id: String,
+        started_at_unix: u64,
         server_time_ms: u64,
     },
     Error {
@@ -341,10 +351,15 @@ fn summarize(name: &str, values: &[f64], lost: usize) {
     );
 }
 
-async fn connect_and_join(join: &JoinMatchRes, quic_override_url: Option<&str>) -> Result<ConnectedClient> {
+async fn connect_and_join(
+    join: &JoinMatchRes,
+    quic_override_url: Option<&str>,
+) -> Result<ConnectedClient> {
     let quic_url = quic_override_url.unwrap_or(&join.quic_url);
     let url = Url::parse(&quic_url.replace("quic://", "https://")).context("parse quic_url")?;
-    let host = url.host_str().ok_or_else(|| anyhow!("quic_url host missing"))?;
+    let host = url
+        .host_str()
+        .ok_or_else(|| anyhow!("quic_url host missing"))?;
     let port = url.port().ok_or_else(|| anyhow!("quic_url port missing"))?;
     let remote_addr = lookup_host((host, port))
         .await
@@ -357,7 +372,9 @@ async fn connect_and_join(join: &JoinMatchRes, quic_override_url: Option<&str>) 
 
     let conn = timeout(
         Duration::from_secs(IO_TIMEOUT_SECS),
-        endpoint.connect(remote_addr, host).context("connect call failed")?,
+        endpoint
+            .connect(remote_addr, host)
+            .context("connect call failed")?,
     )
     .await
     .context("timed out waiting for QUIC connect")??;
@@ -386,6 +403,9 @@ async fn connect_and_join(join: &JoinMatchRes, quic_override_url: Option<&str>) 
         }
         ServerReliable::Error { code, message } => {
             return Err(anyhow!("join failed: {code} {message}"));
+        }
+        ServerReliable::MatchStarted { .. } => {
+            return Err(anyhow!("unexpected match_started before join_ok"));
         }
     }
 
@@ -432,9 +452,17 @@ async fn measure_datagram_one_way(
 
         let received = timeout(Duration::from_secs(DATAGRAM_TIMEOUT_SECS), async {
             loop {
-                let bytes = receiver.conn.read_datagram().await.context("read datagram failed")?;
+                let bytes = receiver
+                    .conn
+                    .read_datagram()
+                    .await
+                    .context("read datagram failed")?;
                 let parsed = serde_json::from_slice::<ServerDatagram>(&bytes);
-                let ServerDatagram::Pos { player_id, seq: received_seq, .. } = match parsed {
+                let ServerDatagram::Pos {
+                    player_id,
+                    seq: received_seq,
+                    ..
+                } = match parsed {
                     Ok(v) => v,
                     Err(_) => continue,
                 };
@@ -505,7 +533,10 @@ async fn main() -> Result<()> {
         .await?;
 
     println!("api base: {api_base}");
-    println!("quic override: {}", quic_override_url.as_deref().unwrap_or(""));
+    println!(
+        "quic override: {}",
+        quic_override_url.as_deref().unwrap_or("")
+    );
     println!("remote host: {}", config.remote_host);
     if let Some(remote_ip) = &config.remote_ip {
         println!("remote ip override: {remote_ip}");
@@ -527,8 +558,7 @@ async fn main() -> Result<()> {
     if stats.delivered.is_empty() {
         println!(
             "datagram_one_way: received=0/{} lost={} no samples available",
-            samples,
-            stats.lost
+            samples, stats.lost
         );
         return Ok(());
     }
