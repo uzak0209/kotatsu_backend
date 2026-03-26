@@ -7,7 +7,8 @@ use axum::{
     Json, Router,
 };
 use kotatsu_proto::controlplane::v1::{
-    control_plane_client::ControlPlaneClient, CreateRoomRequest, GetRoomRequest, IssueJoinTicketRequest,
+    control_plane_client::ControlPlaneClient, CreateRoomRequest, DeleteRoomRequest, GetRoomRequest,
+    IssueJoinTicketRequest,
 };
 use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, sync::Arc};
@@ -73,7 +74,7 @@ struct GetMatchRes {
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(health, openapi, create_match, get_match, join_match),
+    paths(health, openapi, create_match, get_match, delete_match, join_match),
     components(
         schemas(
             HealthRes,
@@ -126,7 +127,10 @@ async fn openapi() -> impl IntoResponse {
         (status = 502, description = "Control plane failure", body = ErrorRes)
     )
 )]
-async fn create_match(State(st): State<AppState>, Json(_req): Json<CreateMatchReq>) -> impl IntoResponse {
+async fn create_match(
+    State(st): State<AppState>,
+    Json(_req): Json<CreateMatchReq>,
+) -> impl IntoResponse {
     let mut grpc = st.grpc.lock().await;
     match grpc.create_room(CreateRoomRequest {}).await {
         Ok(res) => {
@@ -271,6 +275,43 @@ async fn get_match(State(st): State<AppState>, Path(match_id): Path<String>) -> 
     }
 }
 
+#[utoipa::path(
+    delete,
+    path = "/v1/matches/{match_id}",
+    tag = "kotatsu-api",
+    params(
+        ("match_id" = String, Path, description = "Match id")
+    ),
+    responses(
+        (status = 204, description = "Delete a match"),
+        (status = 404, description = "Match not found", body = ErrorRes),
+        (status = 502, description = "Control plane failure", body = ErrorRes)
+    )
+)]
+async fn delete_match(
+    State(st): State<AppState>,
+    Path(match_id): Path<String>,
+) -> impl IntoResponse {
+    let mut grpc = st.grpc.lock().await;
+    match grpc.delete_room(DeleteRoomRequest { match_id }).await {
+        Ok(_) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) if e.code() == tonic::Code::NotFound => (
+            StatusCode::NOT_FOUND,
+            Json(ErrorRes {
+                error: "match_not_found".into(),
+            }),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::BAD_GATEWAY,
+            Json(ErrorRes {
+                error: format!("control_plane_error:{e}"),
+            }),
+        )
+            .into_response(),
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -293,7 +334,7 @@ async fn main() -> Result<()> {
         .route("/health", get(health))
         .route("/openapi.json", get(openapi))
         .route("/v1/matches", post(create_match))
-        .route("/v1/matches/:match_id", get(get_match))
+        .route("/v1/matches/:match_id", get(get_match).delete(delete_match))
         .route("/v1/matches/:match_id/join", post(join_match))
         .with_state(st);
 

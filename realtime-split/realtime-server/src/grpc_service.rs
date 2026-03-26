@@ -1,6 +1,7 @@
 use kotatsu_proto::controlplane::v1::{
-    control_plane_server::ControlPlane, CreateRoomRequest, CreateRoomResponse, GetRoomRequest,
-    GetRoomResponse, IssueJoinTicketRequest, IssueJoinTicketResponse, RoomPlayer,
+    control_plane_server::ControlPlane, CreateRoomRequest, CreateRoomResponse, DeleteRoomRequest,
+    DeleteRoomResponse, GetRoomRequest, GetRoomResponse, IssueJoinTicketRequest,
+    IssueJoinTicketResponse, RoomPlayer,
 };
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
@@ -103,5 +104,103 @@ impl ControlPlane for ControlPlaneSvc {
             max_players: ROOM_MAX_PLAYERS as u32,
             players,
         }))
+    }
+
+    async fn delete_room(
+        &self,
+        request: Request<DeleteRoomRequest>,
+    ) -> Result<Response<DeleteRoomResponse>, Status> {
+        let req = request.into_inner();
+        let mut core = self.st.core.lock().await;
+
+        if core.matches.remove(&req.match_id).is_none() {
+            return Err(Status::not_found("match_not_found"));
+        }
+
+        core.tickets
+            .retain(|_, ticket| ticket.match_id != req.match_id);
+
+        Ok(Response::new(DeleteRoomResponse {}))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
+
+    use crate::types::{CoreState, Ticket};
+
+    fn test_state(core: CoreState) -> AppState {
+        AppState {
+            core: Arc::new(Mutex::new(core)),
+            udp_public_url: "udp://127.0.0.1:4433".into(),
+            udp_socket: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn delete_room_removes_room_and_pending_tickets() {
+        let match_id = "m_delete".to_string();
+        let keep_match_id = "m_keep".to_string();
+        let svc = ControlPlaneSvc {
+            st: test_state(CoreState {
+                matches: HashMap::from([
+                    (match_id.clone(), MatchRoom::new()),
+                    (keep_match_id.clone(), MatchRoom::new()),
+                ]),
+                tickets: HashMap::from([
+                    (
+                        "t_delete".into(),
+                        Ticket {
+                            match_id: match_id.clone(),
+                            player_id: "p_delete".into(),
+                            display_name: "delete".into(),
+                            expires_at_unix: 100,
+                        },
+                    ),
+                    (
+                        "t_keep".into(),
+                        Ticket {
+                            match_id: keep_match_id.clone(),
+                            player_id: "p_keep".into(),
+                            display_name: "keep".into(),
+                            expires_at_unix: 100,
+                        },
+                    ),
+                ]),
+            }),
+        };
+
+        svc.delete_room(Request::new(DeleteRoomRequest {
+            match_id: match_id.clone(),
+        }))
+        .await
+        .expect("delete should succeed");
+
+        let core = svc.st.core.lock().await;
+        assert!(!core.matches.contains_key(&match_id));
+        assert!(core.matches.contains_key(&keep_match_id));
+        assert!(!core.tickets.contains_key("t_delete"));
+        assert!(core.tickets.contains_key("t_keep"));
+    }
+
+    #[tokio::test]
+    async fn delete_room_returns_not_found_for_missing_match() {
+        let svc = ControlPlaneSvc {
+            st: test_state(CoreState::default()),
+        };
+
+        let err = svc
+            .delete_room(Request::new(DeleteRoomRequest {
+                match_id: "missing".into(),
+            }))
+            .await
+            .expect_err("missing match should fail");
+
+        assert_eq!(err.code(), tonic::Code::NotFound);
+        assert_eq!(err.message(), "match_not_found");
     }
 }

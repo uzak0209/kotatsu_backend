@@ -6,6 +6,7 @@ service ControlPlane {
   rpc CreateRoom(CreateRoomRequest) returns (CreateRoomResponse);
   rpc IssueJoinTicket(IssueJoinTicketRequest) returns (IssueJoinTicketResponse);
   rpc GetRoom(GetRoomRequest) returns (GetRoomResponse);
+  rpc DeleteRoom(DeleteRoomRequest) returns (DeleteRoomResponse);
 }
 
 message CreateRoomRequest {}
@@ -46,3 +47,9 @@ message GetRoomResponse {
   uint32 max_players = 2;
   repeated RoomPlayer players = 3;
 }
+
+message DeleteRoomRequest {
+  string match_id = 1;
+}
+
+message DeleteRoomResponse {}
