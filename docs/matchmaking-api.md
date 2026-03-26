@@ -21,6 +21,7 @@ Machine-readable OpenAPI is available at:
 3. Each player calls `POST /v1/matches/{match_id}/join`
 4. Client uses the returned `quic_url` and `token` to connect to realtime QUIC
 5. Optional: poll `GET /v1/matches/{match_id}` to inspect room state
+6. Optional: if the host cancels the lobby, call `DELETE /v1/matches/{match_id}`
 
 ## Endpoints
 
@@ -114,6 +115,25 @@ Possible responses:
 - `404 Not Found`: `{"error":"match_not_found"}`
 - `502 Bad Gateway`: control plane error
 
+### `DELETE /v1/matches/{match_id}`
+Deletes a match room and invalidates any unused join tickets for that room.
+
+Path parameters:
+- `match_id`: match identifier returned by `POST /v1/matches`
+
+Example:
+```bash
+curl -sS -X DELETE -i http://127.0.0.1:8080/v1/matches/<match_id>
+```
+
+Success response:
+- `204 No Content`
+
+Possible responses:
+- `204 No Content`
+- `404 Not Found`: `{"error":"match_not_found"}`
+- `502 Bad Gateway`: control plane error
+
 ### `POST /v1/matches/{match_id}/join`
 Issues a realtime join ticket for one player.
 
@@ -181,4 +201,9 @@ curl -sS -X POST "http://127.0.0.1:8080/v1/matches/${MATCH_ID}/join" \
 Inspect the room:
 ```bash
 curl -sS "http://127.0.0.1:8080/v1/matches/${MATCH_ID}"
+```
+
+Delete the room:
+```bash
+curl -sS -X DELETE -i "http://127.0.0.1:8080/v1/matches/${MATCH_ID}"
 ```

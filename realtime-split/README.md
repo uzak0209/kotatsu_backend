@@ -82,6 +82,10 @@ curl -sS -X POST http://127.0.0.1:8080/v1/matches -H 'content-type: application/
 ```bash
 curl -sS -X POST http://127.0.0.1:8080/v1/matches/<match_id>/join -H 'content-type: application/json' -d '{"display_name":"p1"}'
 ```
+3. Delete match
+```bash
+curl -sS -X DELETE http://127.0.0.1:8080/v1/matches/<match_id> -i
+```
 
 ## Protocol split
 - Reliable QUIC bidirectional stream:
