@@ -2,13 +2,15 @@ use kotatsu_proto::controlplane::v1::{
     control_plane_server::ControlPlane, CreateRoomRequest, CreateRoomResponse, DeleteRoomRequest,
     DeleteRoomResponse, GetRoomRequest, GetRoomResponse, IssueJoinTicketRequest,
     IssueJoinTicketResponse, ListRoomsRequest, ListRoomsResponse, RoomPlayer, RoomSummary,
+    StartRoomRequest, StartRoomResponse,
 };
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
 use crate::magicnums::{ROOM_MAX_PLAYERS, TOKEN_TTL_SECS};
-use crate::types::{AppState, MatchRoom, Ticket};
-use crate::utils::now_unix;
+use crate::room::broadcast_reliable_udp;
+use crate::types::{AppState, MatchRoom, ServerReliable, Ticket};
+use crate::utils::{now_ms, now_unix};
 
 #[derive(Clone)]
 pub(crate) struct ControlPlaneSvc {
@@ -60,6 +62,7 @@ impl ControlPlane for ControlPlaneSvc {
                 match_id: match_id.clone(),
                 max_players: ROOM_MAX_PLAYERS as u32,
                 players: room_players(room),
+                started_at_unix: room.started_at_unix,
             })
             .collect::<Vec<_>>();
         rooms.sort_by(|a, b| a.match_id.cmp(&b.match_id));
@@ -126,6 +129,46 @@ impl ControlPlane for ControlPlaneSvc {
             match_id: req.match_id,
             max_players: ROOM_MAX_PLAYERS as u32,
             players: room_players(room),
+            started_at_unix: room.started_at_unix,
+        }))
+    }
+
+    async fn start_room(
+        &self,
+        request: Request<StartRoomRequest>,
+    ) -> Result<Response<StartRoomResponse>, Status> {
+        let req = request.into_inner();
+        let (started_at_unix, just_started) = {
+            let mut core = self.st.core.lock().await;
+            let room = core
+                .matches
+                .get_mut(&req.match_id)
+                .ok_or_else(|| Status::not_found("match_not_found"))?;
+
+            if room.started_at_unix == 0 {
+                room.started_at_unix = now_unix();
+                (room.started_at_unix, true)
+            } else {
+                (room.started_at_unix, false)
+            }
+        };
+
+        if just_started {
+            broadcast_reliable_udp(
+                &self.st,
+                &req.match_id,
+                ServerReliable::MatchStarted {
+                    match_id: req.match_id.clone(),
+                    started_at_unix,
+                    server_time_ms: now_ms(),
+                },
+            )
+            .await;
+        }
+
+        Ok(Response::new(StartRoomResponse {
+            match_id: req.match_id,
+            started_at_unix,
         }))
     }
 
@@ -183,6 +226,7 @@ mod tests {
                         "m_b".into(),
                         MatchRoom {
                             players: HashMap::from([("p_b".into(), test_player("beta"))]),
+                            started_at_unix: 200,
                         },
                     ),
                     (
@@ -192,6 +236,7 @@ mod tests {
                                 ("p_z".into(), test_player("zeta")),
                                 ("p_a".into(), test_player("alpha")),
                             ]),
+                            started_at_unix: 100,
                         },
                     ),
                 ]),
@@ -208,10 +253,68 @@ mod tests {
         assert_eq!(response.rooms.len(), 2);
         assert_eq!(response.rooms[0].match_id, "m_a");
         assert_eq!(response.rooms[1].match_id, "m_b");
+        assert_eq!(response.rooms[0].started_at_unix, 100);
+        assert_eq!(response.rooms[1].started_at_unix, 200);
         assert_eq!(response.rooms[0].players.len(), 2);
         assert_eq!(response.rooms[0].players[0].player_id, "p_a");
         assert_eq!(response.rooms[0].players[1].player_id, "p_z");
         assert_eq!(response.rooms[1].players[0].player_id, "p_b");
+    }
+
+    #[tokio::test]
+    async fn start_room_marks_room_started_and_notifies_players() {
+        let match_id = "m_start".to_string();
+        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+        let svc = ControlPlaneSvc {
+            st: test_state(CoreState {
+                matches: HashMap::from([(
+                    match_id.clone(),
+                    MatchRoom {
+                        players: HashMap::from([(
+                            "p_1".into(),
+                            PlayerHandle {
+                                display_name: "host".into(),
+                                params: PlayerParams::default(),
+                                next_param_change_at_unix: 0,
+                                reliable_tx: tx,
+                                connection: None,
+                            },
+                        )]),
+                        started_at_unix: 0,
+                    },
+                )]),
+                tickets: HashMap::new(),
+            }),
+        };
+
+        let response = svc
+            .start_room(Request::new(StartRoomRequest {
+                match_id: match_id.clone(),
+            }))
+            .await
+            .expect("start should succeed")
+            .into_inner();
+
+        assert_eq!(response.match_id, match_id);
+        assert!(response.started_at_unix > 0);
+
+        let core = svc.st.core.lock().await;
+        let room = core.matches.get(&match_id).expect("room should exist");
+        assert_eq!(room.started_at_unix, response.started_at_unix);
+        drop(core);
+
+        let msg = rx.recv().await.expect("match start should be broadcast");
+        match msg {
+            ServerReliable::MatchStarted {
+                match_id: got_match_id,
+                started_at_unix,
+                ..
+            } => {
+                assert_eq!(got_match_id, match_id);
+                assert_eq!(started_at_unix, response.started_at_unix);
+            }
+            other => panic!("unexpected reliable message: {other:?}"),
+        }
     }
 
     #[tokio::test]

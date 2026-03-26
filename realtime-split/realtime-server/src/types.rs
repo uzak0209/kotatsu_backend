@@ -89,12 +89,14 @@ pub(crate) struct PlayerHandle {
 #[derive(Debug)]
 pub(crate) struct MatchRoom {
     pub(crate) players: HashMap<String, PlayerHandle>,
+    pub(crate) started_at_unix: u64,
 }
 
 impl MatchRoom {
     pub(crate) fn new() -> Self {
         Self {
             players: HashMap::new(),
+            started_at_unix: 0,
         }
     }
 }
@@ -132,6 +134,11 @@ pub(crate) enum ServerReliable {
         match_id: String,
         player_id: String,
         params: PlayerParams,
+        server_time_ms: u64,
+    },
+    MatchStarted {
+        match_id: String,
+        started_at_unix: u64,
         server_time_ms: u64,
     },
     ParamApplied {

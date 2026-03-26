@@ -3,7 +3,9 @@ use std::net::SocketAddr;
 use tokio::sync::mpsc;
 
 use crate::params::apply_param_change;
-use crate::types::{AppState, ParamDirection, ParamKind, ParamMutation, PlayerConnection, ServerReliable};
+use crate::types::{
+    AppState, ParamDirection, ParamKind, ParamMutation, PlayerConnection, ServerReliable,
+};
 use crate::utils::now_unix;
 
 pub(crate) async fn update_player_params(
@@ -132,6 +134,7 @@ mod tests {
                                 connection: None,
                             },
                         )]),
+                        started_at_unix: 0,
                     },
                 )]),
                 tickets: HashMap::new(),
@@ -182,6 +185,7 @@ mod tests {
                                 connection: None,
                             },
                         )]),
+                        started_at_unix: 0,
                     },
                 )]),
                 tickets: HashMap::new(),

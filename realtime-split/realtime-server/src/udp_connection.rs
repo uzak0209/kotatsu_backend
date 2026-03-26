@@ -168,14 +168,15 @@ async fn handle_join(
     let (tx, rx) = mpsc::channel::<ServerReliable>(1024);
 
     // Register player
-    let params = match register_player_udp(&st, &match_id, &player_id, display_name, addr, tx.clone()).await
-    {
-        Ok(p) => p,
-        Err(e) => {
-            send_error(&socket, addr, "join_failed", &e.to_string()).await;
-            return;
-        }
-    };
+    let params =
+        match register_player_udp(&st, &match_id, &player_id, display_name, addr, tx.clone()).await
+        {
+            Ok(p) => p,
+            Err(e) => {
+                send_error(&socket, addr, "join_failed", &e.to_string()).await;
+                return;
+            }
+        };
 
     // Add to client registry
     {

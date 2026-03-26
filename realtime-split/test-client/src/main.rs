@@ -37,6 +37,7 @@ struct JoinMatchRes {
 struct GetMatchRes {
     match_id: String,
     max_players: u32,
+    started_at_unix: u64,
     players: Vec<RoomPlayerRes>,
 }
 
@@ -75,7 +76,9 @@ struct PlayerParams {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "t", rename_all = "snake_case")]
 enum ClientReliable {
-    Join { token: String },
+    Join {
+        token: String,
+    },
     ParamChange {
         seq: u64,
         param: ParamKind,
@@ -90,6 +93,11 @@ enum ServerReliable {
         match_id: String,
         player_id: String,
         params: PlayerParams,
+        server_time_ms: u64,
+    },
+    MatchStarted {
+        match_id: String,
+        started_at_unix: u64,
         server_time_ms: u64,
     },
     ParamApplied {
@@ -238,7 +246,9 @@ async fn run_one_client(
 ) -> Result<()> {
     let quic_url = quic_override_url.unwrap_or(join.quic_url.clone());
     let url = Url::parse(&quic_url.replace("quic://", "https://")).context("parse quic_url")?;
-    let host = url.host_str().ok_or_else(|| anyhow!("quic_url host missing"))?;
+    let host = url
+        .host_str()
+        .ok_or_else(|| anyhow!("quic_url host missing"))?;
     let port = url.port().ok_or_else(|| anyhow!("quic_url port missing"))?;
     let remote_addr = lookup_host((host, port))
         .await
@@ -370,7 +380,7 @@ async fn run_one_client(
                         st.cooldown_error_seen = true;
                     }
                 }
-                ServerReliable::JoinOk { .. } => {}
+                ServerReliable::JoinOk { .. } | ServerReliable::MatchStarted { .. } => {}
             }
         }
     }
@@ -402,7 +412,7 @@ async fn run_one_client(
                     st.cooldown_error_seen = true;
                 }
             }
-            ServerReliable::JoinOk { .. } => {}
+            ServerReliable::JoinOk { .. } | ServerReliable::MatchStarted { .. } => {}
         }
     }
 
@@ -439,7 +449,10 @@ async fn main() -> Result<()> {
         .json()
         .await?;
 
-    println!("created match: {} max={}", create.match_id, create.max_players);
+    println!(
+        "created match: {} max={}",
+        create.match_id, create.max_players
+    );
 
     let mut joins = Vec::new();
     for i in 0..4 {
@@ -485,9 +498,10 @@ async fn main() -> Result<()> {
         .await?;
 
     println!(
-        "room snapshot: match_id={} max_players={} players={}",
+        "room snapshot: match_id={} max_players={} started_at={} players={}",
         room.match_id,
         room.max_players,
+        room.started_at_unix,
         room.players.len()
     );
     for p in &room.players {
