@@ -8,7 +8,7 @@ use axum::{
 };
 use kotatsu_proto::controlplane::v1::{
     control_plane_client::ControlPlaneClient, CreateRoomRequest, DeleteRoomRequest, GetRoomRequest,
-    IssueJoinTicketRequest,
+    IssueJoinTicketRequest, ListRoomsRequest,
 };
 use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, sync::Arc};
@@ -39,6 +39,19 @@ struct CreateMatchReq {}
 struct CreateMatchRes {
     match_id: String,
     max_players: u32,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+struct MatchSummaryRes {
+    match_id: String,
+    max_players: u32,
+    player_count: u32,
+    players: Vec<RoomPlayerRes>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+struct ListMatchesRes {
+    matches: Vec<MatchSummaryRes>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -74,13 +87,23 @@ struct GetMatchRes {
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(health, openapi, create_match, get_match, delete_match, join_match),
+    paths(
+        health,
+        openapi,
+        list_matches,
+        create_match,
+        get_match,
+        delete_match,
+        join_match
+    ),
     components(
         schemas(
             HealthRes,
             ErrorRes,
             CreateMatchReq,
             CreateMatchRes,
+            MatchSummaryRes,
+            ListMatchesRes,
             JoinMatchReq,
             JoinMatchRes,
             RoomPlayerRes,
@@ -115,6 +138,58 @@ async fn health() -> impl IntoResponse {
 )]
 async fn openapi() -> impl IntoResponse {
     Json(ApiDoc::openapi())
+}
+
+#[utoipa::path(
+    get,
+    path = "/v1/matches",
+    tag = "kotatsu-api",
+    responses(
+        (status = 200, description = "List all current matches", body = ListMatchesRes),
+        (status = 502, description = "Control plane failure", body = ErrorRes)
+    )
+)]
+async fn list_matches(State(st): State<AppState>) -> impl IntoResponse {
+    let mut grpc = st.grpc.lock().await;
+    match grpc.list_rooms(ListRoomsRequest {}).await {
+        Ok(res) => {
+            let r = res.into_inner();
+            (
+                StatusCode::OK,
+                Json(ListMatchesRes {
+                    matches: r
+                        .rooms
+                        .into_iter()
+                        .map(|room| MatchSummaryRes {
+                            match_id: room.match_id,
+                            max_players: room.max_players,
+                            player_count: room.players.len() as u32,
+                            players: room
+                                .players
+                                .into_iter()
+                                .map(|p| RoomPlayerRes {
+                                    player_id: p.player_id,
+                                    display_name: p.display_name,
+                                    gravity: p.gravity,
+                                    friction: p.friction,
+                                    speed: p.speed,
+                                    next_param_change_at_unix: p.next_param_change_at_unix,
+                                })
+                                .collect(),
+                        })
+                        .collect(),
+                }),
+            )
+                .into_response()
+        }
+        Err(e) => (
+            StatusCode::BAD_GATEWAY,
+            Json(ErrorRes {
+                error: format!("control_plane_error:{e}"),
+            }),
+        )
+            .into_response(),
+    }
 }
 
 #[utoipa::path(
@@ -333,7 +408,7 @@ async fn main() -> Result<()> {
     let app = Router::new()
         .route("/health", get(health))
         .route("/openapi.json", get(openapi))
-        .route("/v1/matches", post(create_match))
+        .route("/v1/matches", get(list_matches).post(create_match))
         .route("/v1/matches/:match_id", get(get_match).delete(delete_match))
         .route("/v1/matches/:match_id/join", post(join_match))
         .with_state(st);
