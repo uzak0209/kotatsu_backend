@@ -1,7 +1,7 @@
 use kotatsu_proto::controlplane::v1::{
     control_plane_server::ControlPlane, CreateRoomRequest, CreateRoomResponse, DeleteRoomRequest,
     DeleteRoomResponse, GetRoomRequest, GetRoomResponse, IssueJoinTicketRequest,
-    IssueJoinTicketResponse, RoomPlayer,
+    IssueJoinTicketResponse, ListRoomsRequest, ListRoomsResponse, RoomPlayer, RoomSummary,
 };
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
@@ -13,6 +13,23 @@ use crate::utils::now_unix;
 #[derive(Clone)]
 pub(crate) struct ControlPlaneSvc {
     pub(crate) st: AppState,
+}
+
+fn room_players(room: &MatchRoom) -> Vec<RoomPlayer> {
+    let mut players = room
+        .players
+        .iter()
+        .map(|(id, p)| RoomPlayer {
+            player_id: id.clone(),
+            display_name: p.display_name.clone(),
+            gravity: u32::from(p.params.gravity),
+            friction: u32::from(p.params.friction),
+            speed: u32::from(p.params.speed),
+            next_param_change_at_unix: p.next_param_change_at_unix,
+        })
+        .collect::<Vec<_>>();
+    players.sort_by(|a, b| a.player_id.cmp(&b.player_id));
+    players
 }
 
 #[tonic::async_trait]
@@ -29,6 +46,25 @@ impl ControlPlane for ControlPlaneSvc {
             match_id,
             max_players: ROOM_MAX_PLAYERS as u32,
         }))
+    }
+
+    async fn list_rooms(
+        &self,
+        _request: Request<ListRoomsRequest>,
+    ) -> Result<Response<ListRoomsResponse>, Status> {
+        let core = self.st.core.lock().await;
+        let mut rooms = core
+            .matches
+            .iter()
+            .map(|(match_id, room)| RoomSummary {
+                match_id: match_id.clone(),
+                max_players: ROOM_MAX_PLAYERS as u32,
+                players: room_players(room),
+            })
+            .collect::<Vec<_>>();
+        rooms.sort_by(|a, b| a.match_id.cmp(&b.match_id));
+
+        Ok(Response::new(ListRoomsResponse { rooms }))
     }
 
     async fn issue_join_ticket(
@@ -86,23 +122,10 @@ impl ControlPlane for ControlPlaneSvc {
             .get(&req.match_id)
             .ok_or_else(|| Status::not_found("match_not_found"))?;
 
-        let players = room
-            .players
-            .iter()
-            .map(|(id, p)| RoomPlayer {
-                player_id: id.clone(),
-                display_name: p.display_name.clone(),
-                gravity: u32::from(p.params.gravity),
-                friction: u32::from(p.params.friction),
-                speed: u32::from(p.params.speed),
-                next_param_change_at_unix: p.next_param_change_at_unix,
-            })
-            .collect();
-
         Ok(Response::new(GetRoomResponse {
             match_id: req.match_id,
             max_players: ROOM_MAX_PLAYERS as u32,
-            players,
+            players: room_players(room),
         }))
     }
 
@@ -131,7 +154,7 @@ mod tests {
     use std::sync::Arc;
     use tokio::sync::Mutex;
 
-    use crate::types::{CoreState, Ticket};
+    use crate::types::{CoreState, PlayerHandle, PlayerParams, Ticket};
 
     fn test_state(core: CoreState) -> AppState {
         AppState {
@@ -139,6 +162,56 @@ mod tests {
             udp_public_url: "udp://127.0.0.1:4433".into(),
             udp_socket: None,
         }
+    }
+
+    fn test_player(display_name: &str) -> PlayerHandle {
+        PlayerHandle {
+            display_name: display_name.into(),
+            params: PlayerParams::default(),
+            next_param_change_at_unix: 0,
+            reliable_tx: tokio::sync::mpsc::channel(1).0,
+            connection: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn list_rooms_returns_all_rooms_sorted() {
+        let svc = ControlPlaneSvc {
+            st: test_state(CoreState {
+                matches: HashMap::from([
+                    (
+                        "m_b".into(),
+                        MatchRoom {
+                            players: HashMap::from([("p_b".into(), test_player("beta"))]),
+                        },
+                    ),
+                    (
+                        "m_a".into(),
+                        MatchRoom {
+                            players: HashMap::from([
+                                ("p_z".into(), test_player("zeta")),
+                                ("p_a".into(), test_player("alpha")),
+                            ]),
+                        },
+                    ),
+                ]),
+                tickets: HashMap::new(),
+            }),
+        };
+
+        let response = svc
+            .list_rooms(Request::new(ListRoomsRequest {}))
+            .await
+            .expect("list should succeed")
+            .into_inner();
+
+        assert_eq!(response.rooms.len(), 2);
+        assert_eq!(response.rooms[0].match_id, "m_a");
+        assert_eq!(response.rooms[1].match_id, "m_b");
+        assert_eq!(response.rooms[0].players.len(), 2);
+        assert_eq!(response.rooms[0].players[0].player_id, "p_a");
+        assert_eq!(response.rooms[0].players[1].player_id, "p_z");
+        assert_eq!(response.rooms[1].players[0].player_id, "p_b");
     }
 
     #[tokio::test]

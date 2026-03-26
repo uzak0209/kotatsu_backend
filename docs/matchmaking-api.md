@@ -17,11 +17,12 @@ Machine-readable OpenAPI is available at:
 
 ## Typical Flow
 1. Create a match with `POST /v1/matches`
-2. Give the returned `match_id` to players
-3. Each player calls `POST /v1/matches/{match_id}/join`
-4. Client uses the returned `quic_url` and `token` to connect to realtime QUIC
-5. Optional: poll `GET /v1/matches/{match_id}` to inspect room state
-6. Optional: if the host cancels the lobby, call `DELETE /v1/matches/{match_id}`
+2. Optional: call `GET /v1/matches` to show the current lobby list
+3. Give the returned `match_id` to players
+4. Each player calls `POST /v1/matches/{match_id}/join`
+5. Client uses the returned `quic_url` and `token` to connect to realtime QUIC
+6. Optional: poll `GET /v1/matches/{match_id}` to inspect room state
+7. Optional: if the host cancels the lobby, call `DELETE /v1/matches/{match_id}`
 
 ## Endpoints
 
@@ -70,6 +71,46 @@ Success response:
   "max_players": 4
 }
 ```
+
+Possible responses:
+- `200 OK`
+- `502 Bad Gateway`: control plane error
+
+### `GET /v1/matches`
+Returns all current lobbies.
+
+Example:
+```bash
+curl -sS http://127.0.0.1:8080/v1/matches
+```
+
+Success response:
+```json
+{
+  "matches": [
+    {
+      "match_id": "m_0123456789abcdef0123456789abcdef",
+      "max_players": 4,
+      "player_count": 1,
+      "players": [
+        {
+          "player_id": "p_0123456789abcdef0123456789abcdef",
+          "display_name": "p1",
+          "gravity": 2,
+          "friction": 2,
+          "speed": 2,
+          "next_param_change_at_unix": 0
+        }
+      ]
+    }
+  ]
+}
+```
+
+Notes:
+- Empty result is `{"matches":[]}`
+- The list includes empty lobbies that have been created but not joined yet
+- `player_count` is the current number of joined players in the lobby
 
 Possible responses:
 - `200 OK`

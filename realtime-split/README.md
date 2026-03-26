@@ -74,15 +74,19 @@ Forward only these from WAN to your host machine:
 Do not forward gRPC port `50051` to WAN.
 
 ## API usage
-1. Create match
+1. List current matches
+```bash
+curl -sS http://127.0.0.1:8080/v1/matches
+```
+2. Create match
 ```bash
 curl -sS -X POST http://127.0.0.1:8080/v1/matches -H 'content-type: application/json' -d '{}'
 ```
-2. Join match
+3. Join match
 ```bash
 curl -sS -X POST http://127.0.0.1:8080/v1/matches/<match_id>/join -H 'content-type: application/json' -d '{"display_name":"p1"}'
 ```
-3. Delete match
+4. Delete match
 ```bash
 curl -sS -X DELETE http://127.0.0.1:8080/v1/matches/<match_id> -i
 ```
