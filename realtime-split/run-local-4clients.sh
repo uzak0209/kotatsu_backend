@@ -5,7 +5,7 @@ cd /Users/uzak/Projects/kotatsu/backend/realtime-split
 
 API_PORT=18080
 GRPC_PORT=15051
-QUIC_PORT=14433
+UDP_PORT=14433
 
 cleanup() {
   if [[ -n "${API_PID:-}" ]]; then kill "$API_PID" 2>/dev/null || true; fi
@@ -16,9 +16,9 @@ trap cleanup EXIT
 mkdir -p .logs
 
 GRPC_ADDR="127.0.0.1:${GRPC_PORT}" \
-QUIC_BIND_ADDR="127.0.0.1:${QUIC_PORT}" \
+UDP_BIND_ADDR="127.0.0.1:${UDP_PORT}" \
 PUBLIC_HOSTNAME="127.0.0.1" \
-QUIC_PORT="${QUIC_PORT}" \
+UDP_PORT="${UDP_PORT}" \
 cargo run -p kotatsu-realtime-server-split > .logs/realtime.log 2>&1 &
 RT_PID=$!
 

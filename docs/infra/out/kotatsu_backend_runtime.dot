@@ -1,0 +1,187 @@
+digraph "Kotatsu Backend Runtime" {
+	graph [bb="0,0,1319,735.15",
+		bgcolor=white,
+		fontcolor="#2D3436",
+		fontname=Helvetica,
+		fontsize=15,
+		label="Kotatsu Backend Runtime",
+		lheight=0.22,
+		lp="659.48,11.875",
+		lwidth=2.41,
+		nodesep=0.7,
+		pad=0.4,
+		rankdir=LR,
+		ranksep=1.1,
+		splines=spline
+	];
+	node [fixedsize=true,
+		fontcolor="#2D3436",
+		fontname=Helvetica,
+		fontsize=13,
+		height=1.4,
+		imagescale=true,
+		label="\N",
+		labelloc=b,
+		shape=box,
+		style=rounded,
+		width=1.4
+	];
+	edge [color="#7B8894",
+		fontname=Helvetica,
+		fontsize=10
+	];
+	subgraph "cluster_Home server" {
+		graph [bb="356.55,31.75,1311,351.75",
+			bgcolor="#E5F5FD",
+			fontname="Sans-Serif",
+			fontsize=12,
+			label="Home server",
+			labeljust=l,
+			lheight=0.18,
+			lp="398.68,341.38",
+			lwidth=0.95,
+			pencolor="#AEB6BE",
+			rankdir=LR,
+			shape=box,
+			style=rounded
+		];
+		subgraph "cluster_Container runtime" {
+			graph [bb="538.35,39.75,1303,322.75",
+				bgcolor="#EBF3E7",
+				fontname="Sans-Serif",
+				fontsize=12,
+				label="Container runtime",
+				labeljust=l,
+				lheight=0.18,
+				lp="593.98,312.38",
+				lwidth=1.32,
+				pencolor="#AEB6BE",
+				rankdir=LR,
+				shape=box,
+				style=rounded
+			];
+			"7e4f7c8ab4c148009bb88d2637c426e2"	[height=2.3,
+				image="/Users/uzak/.cache/uv/archive-v0/dI8en7LuNXxOadjg8eUsO/lib/python3.14/site-packages/resources/onprem/container/docker.png",
+				label="Docker Compose
+or Podman",
+				pos="596.75,135.75",
+				shape=none];
+			f783e0ea55964de1a5f1473037c66e29	[height=2.7,
+				image="/Users/uzak/.cache/uv/archive-v0/dI8en7LuNXxOadjg8eUsO/lib/python3.14/site-packages/resources/programming/language/rust.png",
+				label="api-server
+HTTP matchmaking
+TCP 8080",
+				pos="922.9,196.75",
+				shape=none];
+			"7e4f7c8ab4c148009bb88d2637c426e2" -> f783e0ea55964de1a5f1473037c66e29	[dir=forward,
+				fontcolor="#2D3436",
+				fontname="Sans-Serif",
+				fontsize=13,
+				pos="e,872.74,187.5 646.98,145.01 704.5,155.84 799.67,173.75 861.58,185.4"];
+			d2118df0bcf44badb4989036821bb588	[height=2.7,
+				image="/Users/uzak/.cache/uv/archive-v0/dI8en7LuNXxOadjg8eUsO/lib/python3.14/site-packages/resources/programming/language/rust.png",
+				label="realtime-server
+UDP realtime
+UDP 4433",
+				pos="1244.5,196.75",
+				shape=none];
+			"7e4f7c8ab4c148009bb88d2637c426e2" -> d2118df0bcf44badb4989036821bb588	[dir=forward,
+				fontcolor="#2D3436",
+				fontname="Sans-Serif",
+				fontsize=13,
+				pos="e,1194.5,164.92 647.04,116.21 721.73,89.257 867.8,46.993 989.65,74.75 1060.7,90.94 1135.1,129.64 1184.9,159.15"];
+			f783e0ea55964de1a5f1473037c66e29 -> d2118df0bcf44badb4989036821bb588	[dir=forward,
+				fontcolor="#2D3436",
+				fontname="Sans-Serif",
+				fontsize=13,
+				label="ControlPlane gRPC
+TCP 50051 (internal)",
+				lp="1091.9,210.25",
+				pos="e,1194.2,196.75 973.14,196.75 1029.6,196.75 1122.1,196.75 1182.9,196.75"];
+		}
+		"5e58f89a45c84a389a4fb3ffc96c61c0"	[height=1.9,
+			image="/Users/uzak/.cache/uv/archive-v0/dI8en7LuNXxOadjg8eUsO/lib/python3.14/site-packages/resources/onprem/compute/server.png",
+			label="Self-hosted machine",
+			pos="414.95,135.75",
+			shape=none];
+		"5e58f89a45c84a389a4fb3ffc96c61c0" -> "7e4f7c8ab4c148009bb88d2637c426e2"	[dir=forward,
+			fontcolor="#2D3436",
+			fontname="Sans-Serif",
+			fontsize=13,
+			pos="e,546.37,135.75 465.08,135.75 486.7,135.75 512.3,135.75 535.09,135.75"];
+	}
+	c8d117f146fc49d58c88050099a9f0da	[height=1.9,
+		image="/Users/uzak/.cache/uv/archive-v0/dI8en7LuNXxOadjg8eUsO/lib/python3.14/site-packages/resources/onprem/client/users.png",
+		label=Players,
+		pos="50.4,479.75",
+		shape=none];
+	e38a7d6f5ed049f1bb3e8cf9fd1fa6a4	[height=1.9,
+		image="/Users/uzak/.cache/uv/archive-v0/dI8en7LuNXxOadjg8eUsO/lib/python3.14/site-packages/resources/saas/cdn/cloudflare.png",
+		label="Cloudflare DNS",
+		pos="414.95,655.75",
+		shape=none];
+	c8d117f146fc49d58c88050099a9f0da -> e38a7d6f5ed049f1bb3e8cf9fd1fa6a4	[dir=forward,
+		fontcolor="#2D3436",
+		fontname="Sans-Serif",
+		fontsize=13,
+		label="Resolve PUBLIC_HOSTNAME",
+		lp="232.68,615.3",
+		pos="e,364.79,631.88 100.67,503.67 166.74,535.74 283.89,592.61 354.69,626.98"];
+	"8eee75c3c2574f0e89e0d3a5d627177c"	[height=1.9,
+		image="/Users/uzak/.cache/uv/archive-v0/dI8en7LuNXxOadjg8eUsO/lib/python3.14/site-packages/resources/onprem/network/internet.png",
+		label=Internet,
+		pos="414.95,427.75",
+		shape=none];
+	c8d117f146fc49d58c88050099a9f0da -> "8eee75c3c2574f0e89e0d3a5d627177c"	[dir=forward,
+		fontcolor="#2D3436",
+		fontname="Sans-Serif",
+		fontsize=13,
+		label="HTTP matchmaking
+TCP 8080",
+		lp="232.68,422.25",
+		pos="e,364.79,412.91 100.75,431.16 112.92,421.98 126.58,413.71 140.8,408.75 210.97,384.28 297.3,396.78 353.88,410.22"];
+	c8d117f146fc49d58c88050099a9f0da -> "8eee75c3c2574f0e89e0d3a5d627177c"	[dir=forward,
+		fontcolor="#2D3436",
+		fontname="Sans-Serif",
+		fontsize=13,
+		label="Realtime gameplay
+UDP 4433",
+		lp="232.68,482.3",
+		pos="e,364.83,436.96 100.35,473.99 155.08,467.39 246.33,455.9 324.55,443.75 333.96,442.29 343.9,440.63 353.6,438.94"];
+	"975d9dec2449475288ae2c38d2fcbd40"	[height=1.9,
+		image="/Users/uzak/.cache/uv/archive-v0/dI8en7LuNXxOadjg8eUsO/lib/python3.14/site-packages/resources/generic/network/router.png",
+		label="Home router",
+		pos="596.75,427.75",
+		shape=none];
+	"8eee75c3c2574f0e89e0d3a5d627177c" -> "975d9dec2449475288ae2c38d2fcbd40"	[dir=forward,
+		fontcolor="#2D3436",
+		fontname="Sans-Serif",
+		fontsize=13,
+		pos="e,546.37,427.75 465.08,427.75 486.7,427.75 512.3,427.75 535.09,427.75"];
+	"975d9dec2449475288ae2c38d2fcbd40" -> f783e0ea55964de1a5f1473037c66e29	[dir=forward,
+		fontcolor="#2D3436",
+		fontname="Sans-Serif",
+		fontsize=13,
+		label="Port forward 8080/tcp",
+		lp="751.65,366",
+		pos="e,872.86,229.68 647.08,389.28 660.02,379.37 674.03,368.81 687.15,359.25 746.49,316.02 815.75,268.41 863.59,235.96"];
+	"975d9dec2449475288ae2c38d2fcbd40" -> d2118df0bcf44badb4989036821bb588	[dir=forward,
+		fontcolor="#2D3436",
+		fontname="Sans-Serif",
+		fontsize=13,
+		label="Port forward 4433/udp",
+		lp="922.9,375.28",
+		pos="e,1194.4,222.89 646.78,419.11 691.34,410.8 758.71,397.12 816.15,380.75 952.87,341.79 1103.6,269.45 1184.4,228.03"];
+	d4efae4129ef4586bcb7fe65f01b1b10	[height=1.9,
+		image="/Users/uzak/.cache/uv/archive-v0/dI8en7LuNXxOadjg8eUsO/lib/python3.14/site-packages/resources/programming/language/bash.png",
+		label="cloudflare-ddns-update.sh",
+		pos="50.4,666.75",
+		shape=none];
+	d4efae4129ef4586bcb7fe65f01b1b10 -> e38a7d6f5ed049f1bb3e8cf9fd1fa6a4	[dir=forward,
+		fontcolor="#2D3436",
+		fontname="Sans-Serif",
+		fontsize=13,
+		label="Update A record",
+		lp="232.68,670.55",
+		pos="e,364.79,657.24 100.67,665.26 166.33,663.26 282.45,659.74 353.38,657.59"];
+}
