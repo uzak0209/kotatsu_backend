@@ -30,7 +30,7 @@ message IssueJoinTicketResponse {
   string player_id = 2;
   string token = 3;
   uint64 token_expires_at_unix = 4;
-  string quic_url = 5;
+  string udp_url = 5;
 }
 
 message GetRoomRequest {

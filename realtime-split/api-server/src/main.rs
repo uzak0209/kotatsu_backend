@@ -65,7 +65,7 @@ struct JoinMatchRes {
     match_id: String,
     player_id: String,
     token: String,
-    quic_url: String,
+    udp_url: String,
     token_expires_at_unix: u64,
 }
 
@@ -275,7 +275,7 @@ async fn join_match(
                     match_id: r.match_id,
                     player_id: r.player_id,
                     token: r.token,
-                    quic_url: r.quic_url,
+                    udp_url: r.udp_url,
                     token_expires_at_unix: r.token_expires_at_unix,
                 }),
             )

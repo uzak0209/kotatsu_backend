@@ -1,8 +1,4 @@
 use anyhow::{anyhow, Context, Result};
-use quinn::{ClientConfig, Endpoint};
-use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
-use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
-use rustls::{DigitallySignedStruct, SignatureScheme};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
@@ -10,7 +6,7 @@ use std::{
     time::Duration,
 };
 use tokio::{
-    net::lookup_host,
+    net::{lookup_host, UdpSocket},
     sync::{mpsc, Mutex},
     time::sleep,
 };
@@ -19,6 +15,8 @@ use url::Url;
 const DEFAULT_TICK_MS: u64 = 32;
 const DEFAULT_TICKS: u64 = 90;
 const SNAPSHOT_LINGER_MS: u64 = 1500;
+const PKT_RELIABLE: u8 = 0x01;
+const PKT_UNRELIABLE: u8 = 0x02;
 
 #[derive(Debug, Deserialize)]
 struct CreateMatchRes {
@@ -30,7 +28,7 @@ struct CreateMatchRes {
 struct JoinMatchRes {
     player_id: String,
     token: String,
-    quic_url: String,
+    udp_url: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -150,90 +148,53 @@ struct ClientStats {
     next_param_change_at_unix: Option<u64>,
 }
 
-#[derive(Debug)]
-struct NoVerifier;
-
-impl ServerCertVerifier for NoVerifier {
-    fn verify_server_cert(
-        &self,
-        _end_entity: &CertificateDer<'_>,
-        _intermediates: &[CertificateDer<'_>],
-        _server_name: &ServerName<'_>,
-        _ocsp_response: &[u8],
-        _now: UnixTime,
-    ) -> Result<ServerCertVerified, rustls::Error> {
-        Ok(ServerCertVerified::assertion())
-    }
-
-    fn verify_tls12_signature(
-        &self,
-        _message: &[u8],
-        _cert: &CertificateDer<'_>,
-        _dss: &DigitallySignedStruct,
-    ) -> Result<HandshakeSignatureValid, rustls::Error> {
-        Ok(HandshakeSignatureValid::assertion())
-    }
-
-    fn verify_tls13_signature(
-        &self,
-        _message: &[u8],
-        _cert: &CertificateDer<'_>,
-        _dss: &DigitallySignedStruct,
-    ) -> Result<HandshakeSignatureValid, rustls::Error> {
-        Ok(HandshakeSignatureValid::assertion())
-    }
-
-    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
-        vec![
-            SignatureScheme::ECDSA_NISTP256_SHA256,
-            SignatureScheme::ECDSA_NISTP384_SHA384,
-            SignatureScheme::ED25519,
-            SignatureScheme::RSA_PSS_SHA256,
-            SignatureScheme::RSA_PSS_SHA384,
-            SignatureScheme::RSA_PSS_SHA512,
-            SignatureScheme::RSA_PKCS1_SHA256,
-            SignatureScheme::RSA_PKCS1_SHA384,
-            SignatureScheme::RSA_PKCS1_SHA512,
-        ]
-    }
+fn encode_packet<T: Serialize>(pkt_type: u8, msg: &T) -> Result<Vec<u8>> {
+    let mut packet = vec![pkt_type];
+    packet.extend_from_slice(&serde_json::to_vec(msg)?);
+    Ok(packet)
 }
 
-fn build_quic_client_config() -> Result<ClientConfig> {
-    let crypto = rustls::ClientConfig::builder()
-        .dangerous()
-        .with_custom_certificate_verifier(Arc::new(NoVerifier))
-        .with_no_client_auth();
-    let client = quinn::crypto::rustls::QuicClientConfig::try_from(crypto)?;
-    Ok(ClientConfig::new(Arc::new(client)))
+fn parse_reliable(packet: &[u8]) -> Option<ServerReliable> {
+    if packet.first().copied() != Some(PKT_RELIABLE) {
+        return None;
+    }
+    serde_json::from_slice(&packet[1..]).ok()
 }
 
-async fn write_json_line<T: Serialize>(send: &mut quinn::SendStream, msg: &T) -> Result<()> {
-    let mut bytes = serde_json::to_vec(msg)?;
-    bytes.push(b'\n');
-    send.write_all(&bytes).await?;
+fn parse_datagram(packet: &[u8]) -> Option<ServerDatagram> {
+    if packet.first().copied() != Some(PKT_UNRELIABLE) {
+        return None;
+    }
+    serde_json::from_slice(&packet[1..]).ok()
+}
+
+async fn connect_udp_socket(udp_url: &str) -> Result<Arc<UdpSocket>> {
+    let url = Url::parse(udp_url).context("parse udp_url")?;
+    let host = url
+        .host_str()
+        .ok_or_else(|| anyhow!("udp_url host missing"))?;
+    let port = url.port().ok_or_else(|| anyhow!("udp_url port missing"))?;
+    let remote_addr = lookup_host((host, port))
+        .await
+        .context("resolve remote host")?
+        .next()
+        .ok_or_else(|| anyhow!("no remote addr resolved"))?;
+
+    let socket = UdpSocket::bind("0.0.0.0:0").await?;
+    socket.connect(remote_addr).await?;
+    Ok(Arc::new(socket))
+}
+
+async fn send_reliable<T: Serialize>(socket: &UdpSocket, msg: &T) -> Result<()> {
+    let packet = encode_packet(PKT_RELIABLE, msg)?;
+    socket.send(&packet).await?;
     Ok(())
 }
 
-async fn read_json_line<T: for<'de> Deserialize<'de>>(
-    recv: &mut quinn::RecvStream,
-    buf: &mut Vec<u8>,
-) -> Result<T> {
-    loop {
-        if let Some(pos) = buf.iter().position(|b| *b == b'\n') {
-            let line = buf.drain(..=pos).collect::<Vec<u8>>();
-            let line = &line[..line.len() - 1];
-            if line.is_empty() {
-                continue;
-            }
-            let msg = serde_json::from_slice::<T>(line)?;
-            return Ok(msg);
-        }
-        let chunk = recv.read_chunk(4096, true).await?;
-        match chunk {
-            Some(c) => buf.extend_from_slice(&c.bytes),
-            None => return Err(anyhow!("stream closed")),
-        }
-    }
+async fn send_datagram<T: Serialize>(socket: &UdpSocket, msg: &T) -> Result<()> {
+    let packet = encode_packet(PKT_UNRELIABLE, msg)?;
+    socket.send(&packet).await?;
+    Ok(())
 }
 
 async fn run_one_client(
@@ -242,77 +203,71 @@ async fn run_one_client(
     stats: Arc<Mutex<HashMap<String, ClientStats>>>,
     tick_ms: u64,
     ticks: u64,
-    quic_override_url: Option<String>,
+    udp_override_url: Option<String>,
 ) -> Result<()> {
-    let quic_url = quic_override_url.unwrap_or(join.quic_url.clone());
-    let url = Url::parse(&quic_url.replace("quic://", "https://")).context("parse quic_url")?;
-    let host = url
-        .host_str()
-        .ok_or_else(|| anyhow!("quic_url host missing"))?;
-    let port = url.port().ok_or_else(|| anyhow!("quic_url port missing"))?;
-    let remote_addr = lookup_host((host, port))
-        .await
-        .context("resolve remote host")?
-        .next()
-        .ok_or_else(|| anyhow!("no remote addr resolved"))?;
+    let udp_url = udp_override_url.unwrap_or(join.udp_url.clone());
+    let socket = connect_udp_socket(&udp_url).await?;
 
-    let mut endpoint = Endpoint::client("0.0.0.0:0".parse()?)?;
-    endpoint.set_default_client_config(build_quic_client_config()?);
-
-    let conn = endpoint
-        .connect(remote_addr, host)
-        .context("connect call failed")?
-        .await
-        .context("connect await failed")?;
-
-    let (mut send, mut recv) = conn.open_bi().await?;
-
-    write_json_line(
-        &mut send,
+    send_reliable(
+        &socket,
         &ClientReliable::Join {
             token: join.token.clone(),
         },
     )
     .await?;
 
-    let mut recv_buf = Vec::with_capacity(2048);
-    let first = read_json_line::<ServerReliable>(&mut recv, &mut recv_buf).await?;
-    match first {
-        ServerReliable::JoinOk { params, .. } => {
-            let mut all = stats.lock().await;
-            let st = all.entry(join.player_id.clone()).or_default();
-            st.join_params = Some(params);
+    let mut buf = vec![0u8; 65536];
+    loop {
+        let len = socket.recv(&mut buf).await?;
+        let packet = &buf[..len];
+        match parse_reliable(packet) {
+            Some(ServerReliable::JoinOk { player_id, params, .. }) => {
+                if player_id != join.player_id {
+                    return Err(anyhow!(
+                        "joined with unexpected player_id: expected {} got {}",
+                        join.player_id,
+                        player_id
+                    ));
+                }
+                let mut all = stats.lock().await;
+                let st = all.entry(join.player_id.clone()).or_default();
+                st.join_params = Some(params);
+                break;
+            }
+            Some(ServerReliable::Error { code, message }) => {
+                return Err(anyhow!("join failed: {code} {message}"));
+            }
+            Some(ServerReliable::MatchStarted { .. } | ServerReliable::ParamApplied { .. }) => {}
+            None => {}
         }
-        ServerReliable::Error { code, message } => {
-            return Err(anyhow!("join failed: {code} {message}"));
-        }
-        _ => return Err(anyhow!("unexpected first reliable message")),
     }
 
     let (reliable_tx, mut reliable_rx) = mpsc::channel::<ServerReliable>(1024);
-    let conn_for_dgram = conn.clone();
-    let player_id = join.player_id.clone();
-
-    let reliable_reader = tokio::spawn(async move {
-        let mut local_buf = recv_buf;
-        while let Ok(msg) = read_json_line::<ServerReliable>(&mut recv, &mut local_buf).await {
-            if reliable_tx.send(msg).await.is_err() {
-                break;
-            }
-        }
-    });
-
-    let stat_map_for_dgram = stats.clone();
-    let pid_for_dgram = player_id.clone();
-    let datagram_reader = tokio::spawn(async move {
-        while let Ok(bytes) = conn_for_dgram.read_datagram().await {
-            let parsed = serde_json::from_slice::<ServerDatagram>(&bytes);
-            let ServerDatagram::Pos { player_id, .. } = match parsed {
+    let socket_reader = socket.clone();
+    let stat_map_for_reader = stats.clone();
+    let pid_for_reader = join.player_id.clone();
+    let reader_task = tokio::spawn(async move {
+        let mut recv_buf = vec![0u8; 65536];
+        loop {
+            let len = match socket_reader.recv(&mut recv_buf).await {
                 Ok(v) => v,
-                Err(_) => continue,
+                Err(_) => break,
             };
-            let mut all = stat_map_for_dgram.lock().await;
-            let st = all.entry(pid_for_dgram.clone()).or_default();
+            let packet = &recv_buf[..len];
+
+            if let Some(msg) = parse_reliable(packet) {
+                if reliable_tx.send(msg).await.is_err() {
+                    break;
+                }
+                continue;
+            }
+
+            let ServerDatagram::Pos { player_id, .. } = match parse_datagram(packet) {
+                Some(v) => v,
+                None => continue,
+            };
+            let mut all = stat_map_for_reader.lock().await;
+            let st = all.entry(pid_for_reader.clone()).or_default();
             st.datagram_count += 1;
             st.datagram_from_players.insert(player_id);
         }
@@ -320,8 +275,8 @@ async fn run_one_client(
 
     if trigger_param_update {
         sleep(Duration::from_millis(400)).await;
-        write_json_line(
-            &mut send,
+        send_reliable(
+            &socket,
             &ClientReliable::ParamChange {
                 seq: 1,
                 param: ParamKind::Gravity,
@@ -331,8 +286,8 @@ async fn run_one_client(
         .await?;
 
         sleep(Duration::from_millis(50)).await;
-        write_json_line(
-            &mut send,
+        send_reliable(
+            &socket,
             &ClientReliable::ParamChange {
                 seq: 2,
                 param: ParamKind::Gravity,
@@ -350,8 +305,7 @@ async fn run_one_client(
             vx: 0.1,
             vy: -0.1,
         };
-        let payload = serde_json::to_vec(&dg)?;
-        let _ = conn.send_datagram(payload.into());
+        send_datagram(&socket, &dg).await?;
         sleep(Duration::from_millis(tick_ms)).await;
 
         while let Ok(msg) = reliable_rx.try_recv() {
@@ -363,9 +317,9 @@ async fn run_one_client(
                     ..
                 } => {
                     let mut all = stats.lock().await;
-                    let st = all.entry(player_id.clone()).or_default();
+                    let st = all.entry(join.player_id.clone()).or_default();
                     st.param_applied_count += 1;
-                    if from_player_id == player_id {
+                    if from_player_id == join.player_id {
                         st.observed_param_state = Some(params);
                         st.next_param_change_at_unix = Some(next_param_change_at_unix);
                     }
@@ -376,7 +330,7 @@ async fn run_one_client(
                         && message.starts_with("cooldown_active:")
                     {
                         let mut all = stats.lock().await;
-                        let st = all.entry(player_id.clone()).or_default();
+                        let st = all.entry(join.player_id.clone()).or_default();
                         st.cooldown_error_seen = true;
                     }
                 }
@@ -395,9 +349,9 @@ async fn run_one_client(
                 ..
             } => {
                 let mut all = stats.lock().await;
-                let st = all.entry(player_id.clone()).or_default();
+                let st = all.entry(join.player_id.clone()).or_default();
                 st.param_applied_count += 1;
-                if from_player_id == player_id {
+                if from_player_id == join.player_id {
                     st.observed_param_state = Some(params);
                     st.next_param_change_at_unix = Some(next_param_change_at_unix);
                 }
@@ -408,7 +362,7 @@ async fn run_one_client(
                     && message.starts_with("cooldown_active:")
                 {
                     let mut all = stats.lock().await;
-                    let st = all.entry(player_id.clone()).or_default();
+                    let st = all.entry(join.player_id.clone()).or_default();
                     st.cooldown_error_seen = true;
                 }
             }
@@ -417,16 +371,12 @@ async fn run_one_client(
     }
 
     sleep(Duration::from_millis(SNAPSHOT_LINGER_MS)).await;
-    conn.close(0u32.into(), b"done");
-    reliable_reader.abort();
-    datagram_reader.abort();
+    reader_task.abort();
     Ok(())
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
-
     let api_base = std::env::var("API_BASE_URL").unwrap_or_else(|_| "http://127.0.0.1:8080".into());
     let tick_ms = std::env::var("TICK_MS")
         .ok()
@@ -436,7 +386,9 @@ async fn main() -> Result<()> {
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(DEFAULT_TICKS);
-    let quic_override_url = std::env::var("QUIC_OVERRIDE_URL").ok();
+    let udp_override_url = std::env::var("UDP_OVERRIDE_URL")
+        .ok()
+        .or_else(|| std::env::var("QUIC_OVERRIDE_URL").ok());
 
     let http = reqwest::Client::new();
 
@@ -483,7 +435,7 @@ async fn main() -> Result<()> {
             st,
             tick_ms,
             ticks,
-            quic_override_url.clone(),
+            udp_override_url.clone(),
         )));
     }
 

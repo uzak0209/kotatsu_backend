@@ -110,7 +110,7 @@ impl ControlPlane for ControlPlaneSvc {
             player_id,
             token,
             token_expires_at_unix: expires,
-            quic_url: self.st.udp_public_url.clone(), // Using udp_url instead of quic_url
+            udp_url: self.st.udp_public_url.clone(),
         }))
     }
 

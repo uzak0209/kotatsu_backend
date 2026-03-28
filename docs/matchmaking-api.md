@@ -21,7 +21,7 @@ Machine-readable OpenAPI is available at:
 3. Give the returned `match_id` to players
 4. Each player calls `POST /v1/matches/{match_id}/join`
 5. Optional: when the host starts the game, call `POST /v1/matches/{match_id}/start`
-6. Client uses the returned `quic_url` and `token` to connect to realtime QUIC
+6. Client uses the returned `udp_url` and `token` to connect to realtime UDP
 7. Optional: poll `GET /v1/matches/{match_id}` to inspect room state
 8. Optional: if the host cancels the lobby, call `DELETE /v1/matches/{match_id}`
 
@@ -234,14 +234,14 @@ Success response:
   "match_id": "m_0123456789abcdef0123456789abcdef",
   "player_id": "p_0123456789abcdef0123456789abcdef",
   "token": "01234567-89ab-cdef-0123-456789abcdef",
-  "quic_url": "quic://kotatsu.ruxel.net:4433",
+  "udp_url": "udp://kotatsu.ruxel.net:4433",
   "token_expires_at_unix": 1760000000
 }
 ```
 
 Field notes:
 - `token`: join token for the realtime server
-- `quic_url`: public QUIC endpoint the client should connect to
+- `udp_url`: public UDP endpoint the client should connect to
 - `token_expires_at_unix`: token expiry time, currently issued for about 1 hour
 
 Possible responses:

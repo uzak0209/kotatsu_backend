@@ -6,7 +6,7 @@ Rust-first backend for the Kotatsu 2D game prototype.
 - `realtime-split/`
   - current backend source
   - `api-server`: HTTP matchmaking API
-  - `realtime-server`: QUIC realtime server
+  - `realtime-server`: UDP realtime server
   - internal communication via gRPC
 
 ## Docker
@@ -32,6 +32,14 @@ cp .sysctl.selfhost.example .sysctl.selfhost
 - `docs/netem-quic-vs-ws.md`
 - `docs/pure-quic-interval32.md`
 - `docs/cloudflare-ddns-setup.md`
+- `docs/udp-realtime-protocol-ja.md`
+- `docs/infra/README.md`
+
+## Infrastructure diagrams
+Generate the current self-hosted infra diagrams with `python-diagrams`:
+```bash
+uv run --with-requirements docs/infra/requirements.txt python3 docs/infra/generate_diagrams.py
+```
 
 ## Validation
 ```bash
