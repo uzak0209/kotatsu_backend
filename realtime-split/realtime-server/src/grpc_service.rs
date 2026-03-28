@@ -58,6 +58,7 @@ impl ControlPlane for ControlPlaneSvc {
         let mut rooms = core
             .matches
             .iter()
+            .filter(|(_, room)| room.started_at_unix == 0)
             .map(|(match_id, room)| RoomSummary {
                 match_id: match_id.clone(),
                 max_players: ROOM_MAX_PLAYERS as u32,
@@ -93,7 +94,9 @@ impl ControlPlane for ControlPlaneSvc {
 
         let player_id = format!("p_{}", Uuid::new_v4().simple());
         let token = Uuid::new_v4().to_string();
-        let expires = now_unix() + TOKEN_TTL_SECS;
+        let now = now_unix();
+        let expires = now + TOKEN_TTL_SECS;
+        room.last_activity_unix = now;
 
         core.tickets.insert(
             token.clone(),
@@ -147,6 +150,7 @@ impl ControlPlane for ControlPlaneSvc {
 
             if room.started_at_unix == 0 {
                 room.started_at_unix = now_unix();
+                room.last_activity_unix = room.started_at_unix;
                 (room.started_at_unix, true)
             } else {
                 (room.started_at_unix, false)
@@ -218,7 +222,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn list_rooms_returns_all_rooms_sorted() {
+    async fn list_rooms_returns_only_unstarted_rooms_sorted() {
         let svc = ControlPlaneSvc {
             st: test_state(CoreState {
                 matches: HashMap::from([
@@ -227,6 +231,7 @@ mod tests {
                         MatchRoom {
                             players: HashMap::from([("p_b".into(), test_player("beta"))]),
                             started_at_unix: 200,
+                            last_activity_unix: 0,
                         },
                     ),
                     (
@@ -236,7 +241,16 @@ mod tests {
                                 ("p_z".into(), test_player("zeta")),
                                 ("p_a".into(), test_player("alpha")),
                             ]),
-                            started_at_unix: 100,
+                            started_at_unix: 0,
+                            last_activity_unix: 0,
+                        },
+                    ),
+                    (
+                        "m_c".into(),
+                        MatchRoom {
+                            players: HashMap::from([("p_c".into(), test_player("gamma"))]),
+                            started_at_unix: 0,
+                            last_activity_unix: 0,
                         },
                     ),
                 ]),
@@ -252,13 +266,13 @@ mod tests {
 
         assert_eq!(response.rooms.len(), 2);
         assert_eq!(response.rooms[0].match_id, "m_a");
-        assert_eq!(response.rooms[1].match_id, "m_b");
-        assert_eq!(response.rooms[0].started_at_unix, 100);
-        assert_eq!(response.rooms[1].started_at_unix, 200);
+        assert_eq!(response.rooms[1].match_id, "m_c");
+        assert_eq!(response.rooms[0].started_at_unix, 0);
+        assert_eq!(response.rooms[1].started_at_unix, 0);
         assert_eq!(response.rooms[0].players.len(), 2);
         assert_eq!(response.rooms[0].players[0].player_id, "p_a");
         assert_eq!(response.rooms[0].players[1].player_id, "p_z");
-        assert_eq!(response.rooms[1].players[0].player_id, "p_b");
+        assert_eq!(response.rooms[1].players[0].player_id, "p_c");
     }
 
     #[tokio::test]
@@ -281,6 +295,7 @@ mod tests {
                             },
                         )]),
                         started_at_unix: 0,
+                        last_activity_unix: 0,
                     },
                 )]),
                 tickets: HashMap::new(),

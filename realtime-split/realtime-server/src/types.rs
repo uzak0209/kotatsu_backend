@@ -5,6 +5,8 @@ use std::sync::Arc;
 use tokio::net::UdpSocket;
 use tokio::sync::{mpsc, Mutex};
 
+use crate::utils::now_unix;
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum ParamKind {
@@ -90,6 +92,7 @@ pub(crate) struct PlayerHandle {
 pub(crate) struct MatchRoom {
     pub(crate) players: HashMap<String, PlayerHandle>,
     pub(crate) started_at_unix: u64,
+    pub(crate) last_activity_unix: u64,
 }
 
 impl MatchRoom {
@@ -97,6 +100,7 @@ impl MatchRoom {
         Self {
             players: HashMap::new(),
             started_at_unix: 0,
+            last_activity_unix: now_unix(),
         }
     }
 }

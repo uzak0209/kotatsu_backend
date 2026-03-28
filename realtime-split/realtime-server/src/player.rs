@@ -4,6 +4,7 @@ use tokio::sync::mpsc;
 
 use crate::magicnums::ROOM_MAX_PLAYERS;
 use crate::types::{AppState, PlayerConnection, PlayerHandle, PlayerParams, ServerReliable};
+use crate::utils::now_unix;
 
 pub(crate) async fn register_player_udp(
     st: &AppState,
@@ -39,6 +40,7 @@ pub(crate) async fn register_player_udp(
             connection: Some(PlayerConnection::Udp(addr)),
         },
     );
+    room.last_activity_unix = now_unix();
 
     Ok(params)
 }
@@ -47,5 +49,6 @@ pub(crate) async fn remove_player(st: &AppState, match_id: &str, player_id: &str
     let mut core = st.core.lock().await;
     if let Some(room) = core.matches.get_mut(match_id) {
         room.players.remove(player_id);
+        room.last_activity_unix = now_unix();
     }
 }

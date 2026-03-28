@@ -1,5 +1,7 @@
 pub const ROOM_MAX_PLAYERS: usize = 4;
 pub const TOKEN_TTL_SECS: u64 = 60 * 60;
+pub const ROOM_IDLE_TIMEOUT_SECS: u64 = 3 * 60;
+pub const ROOM_CLEANUP_INTERVAL_SECS: u64 = 1;
 pub const PARAM_MIN_LEVEL: u8 = 1;
 pub const PARAM_MAX_LEVEL_THREE_STAGE: u8 = 3;
 pub const PARAM_MAX_LEVEL_FRICTION: u8 = 2;
