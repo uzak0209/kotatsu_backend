@@ -32,7 +32,7 @@ struct JoinMatchRes {
     match_id: String,
     player_id: String,
     token: String,
-    quic_url: String,
+    udp_url: String,
     token_expires_at_unix: u64,
 }
 

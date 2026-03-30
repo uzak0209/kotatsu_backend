@@ -4,6 +4,7 @@ use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::Mutex;
 use tracing::info;
 
+mod cleanup;
 mod grpc_service;
 mod magicnums;
 mod params;
@@ -14,6 +15,7 @@ mod types;
 mod udp_connection;
 mod utils;
 
+use cleanup::spawn_room_cleanup_task;
 use grpc_service::ControlPlaneSvc;
 use types::{AppState, CoreState};
 use udp_connection::run_udp_server;
@@ -43,6 +45,8 @@ async fn main() -> Result<()> {
         udp_public_url,
         udp_socket: None, // Will be set when UDP server starts
     };
+
+    spawn_room_cleanup_task(st.clone());
 
     // Spawn UDP server
     let udp_state = st.clone();

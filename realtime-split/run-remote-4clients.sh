@@ -6,7 +6,7 @@ cd "$SCRIPT_DIR"
 
 REMOTE_HOST="${REMOTE_HOST:-kotatsu.ruxel.net}"
 API_PORT="${API_PORT:-8080}"
-QUIC_PORT="${QUIC_PORT:-4433}"
+UDP_PORT="${UDP_PORT:-4433}"
 TICK_MS="${TICK_MS:-32}"
 TICKS="${TICKS:-90}"
 
@@ -37,14 +37,14 @@ if [[ -z "$REMOTE_IP" ]]; then
 fi
 
 API_BASE_URL="${API_BASE_URL:-http://${REMOTE_IP}:${API_PORT}}"
-QUIC_OVERRIDE_URL="${QUIC_OVERRIDE_URL:-quic://${REMOTE_IP}:${QUIC_PORT}}"
+UDP_OVERRIDE_URL="${UDP_OVERRIDE_URL:-udp://${REMOTE_IP}:${UDP_PORT}}"
 
 echo "remote host: ${REMOTE_HOST} (${REMOTE_IP})"
 echo "api base: ${API_BASE_URL}"
-echo "quic override: ${QUIC_OVERRIDE_URL}"
+echo "udp override: ${UDP_OVERRIDE_URL}"
 
 API_BASE_URL="$API_BASE_URL" \
-QUIC_OVERRIDE_URL="$QUIC_OVERRIDE_URL" \
+UDP_OVERRIDE_URL="$UDP_OVERRIDE_URL" \
 TICK_MS="$TICK_MS" \
 TICKS="$TICKS" \
 cargo run -p kotatsu-test-client

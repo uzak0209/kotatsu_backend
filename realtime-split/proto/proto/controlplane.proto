@@ -4,8 +4,11 @@ package kotatsu.controlplane.v1;
 
 service ControlPlane {
   rpc CreateRoom(CreateRoomRequest) returns (CreateRoomResponse);
+  rpc ListRooms(ListRoomsRequest) returns (ListRoomsResponse);
   rpc IssueJoinTicket(IssueJoinTicketRequest) returns (IssueJoinTicketResponse);
   rpc GetRoom(GetRoomRequest) returns (GetRoomResponse);
+  rpc StartRoom(StartRoomRequest) returns (StartRoomResponse);
+  rpc DeleteRoom(DeleteRoomRequest) returns (DeleteRoomResponse);
 }
 
 message CreateRoomRequest {}
@@ -14,6 +17,8 @@ message CreateRoomResponse {
   string match_id = 1;
   uint32 max_players = 2;
 }
+
+message ListRoomsRequest {}
 
 message IssueJoinTicketRequest {
   string match_id = 1;
@@ -25,7 +30,7 @@ message IssueJoinTicketResponse {
   string player_id = 2;
   string token = 3;
   uint64 token_expires_at_unix = 4;
-  string quic_url = 5;
+  string udp_url = 5;
 }
 
 message GetRoomRequest {
@@ -45,4 +50,31 @@ message GetRoomResponse {
   string match_id = 1;
   uint32 max_players = 2;
   repeated RoomPlayer players = 3;
+  uint64 started_at_unix = 4;
+}
+
+message RoomSummary {
+  string match_id = 1;
+  uint32 max_players = 2;
+  repeated RoomPlayer players = 3;
+  uint64 started_at_unix = 4;
+}
+
+message ListRoomsResponse {
+  repeated RoomSummary rooms = 1;
+}
+
+message DeleteRoomRequest {
+  string match_id = 1;
+}
+
+message DeleteRoomResponse {}
+
+message StartRoomRequest {
+  string match_id = 1;
+}
+
+message StartRoomResponse {
+  string match_id = 1;
+  uint64 started_at_unix = 2;
 }

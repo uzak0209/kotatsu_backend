@@ -1,7 +1,7 @@
 Kotatsu remote RTT tester
 =========================
 
-This binary measures post-connect QUIC datagram one-way latency:
+This binary measures post-connect UDP datagram one-way latency:
 client A -> server -> client B
 
 No Rust installation is required.

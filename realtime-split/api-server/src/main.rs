@@ -7,7 +7,8 @@ use axum::{
     Json, Router,
 };
 use kotatsu_proto::controlplane::v1::{
-    control_plane_client::ControlPlaneClient, CreateRoomRequest, GetRoomRequest, IssueJoinTicketRequest,
+    control_plane_client::ControlPlaneClient, CreateRoomRequest, DeleteRoomRequest, GetRoomRequest,
+    IssueJoinTicketRequest, ListRoomsRequest, StartRoomRequest,
 };
 use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, sync::Arc};
@@ -40,6 +41,20 @@ struct CreateMatchRes {
     max_players: u32,
 }
 
+#[derive(Debug, Serialize, ToSchema)]
+struct MatchSummaryRes {
+    match_id: String,
+    max_players: u32,
+    player_count: u32,
+    started_at_unix: u64,
+    players: Vec<RoomPlayerRes>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+struct ListMatchesRes {
+    matches: Vec<MatchSummaryRes>,
+}
+
 #[derive(Debug, Deserialize, ToSchema)]
 struct JoinMatchReq {
     display_name: Option<String>,
@@ -50,7 +65,7 @@ struct JoinMatchRes {
     match_id: String,
     player_id: String,
     token: String,
-    quic_url: String,
+    udp_url: String,
     token_expires_at_unix: u64,
 }
 
@@ -68,22 +83,41 @@ struct RoomPlayerRes {
 struct GetMatchRes {
     match_id: String,
     max_players: u32,
+    started_at_unix: u64,
     players: Vec<RoomPlayerRes>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+struct StartMatchRes {
+    match_id: String,
+    started_at_unix: u64,
 }
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(health, openapi, create_match, get_match, join_match),
+    paths(
+        health,
+        openapi,
+        list_matches,
+        create_match,
+        get_match,
+        delete_match,
+        start_match,
+        join_match
+    ),
     components(
         schemas(
             HealthRes,
             ErrorRes,
             CreateMatchReq,
             CreateMatchRes,
+            MatchSummaryRes,
+            ListMatchesRes,
             JoinMatchReq,
             JoinMatchRes,
             RoomPlayerRes,
-            GetMatchRes
+            GetMatchRes,
+            StartMatchRes
         )
     ),
     tags(
@@ -117,6 +151,59 @@ async fn openapi() -> impl IntoResponse {
 }
 
 #[utoipa::path(
+    get,
+    path = "/v1/matches",
+    tag = "kotatsu-api",
+    responses(
+        (status = 200, description = "List all current matches", body = ListMatchesRes),
+        (status = 502, description = "Control plane failure", body = ErrorRes)
+    )
+)]
+async fn list_matches(State(st): State<AppState>) -> impl IntoResponse {
+    let mut grpc = st.grpc.lock().await;
+    match grpc.list_rooms(ListRoomsRequest {}).await {
+        Ok(res) => {
+            let r = res.into_inner();
+            (
+                StatusCode::OK,
+                Json(ListMatchesRes {
+                    matches: r
+                        .rooms
+                        .into_iter()
+                        .map(|room| MatchSummaryRes {
+                            match_id: room.match_id,
+                            max_players: room.max_players,
+                            player_count: room.players.len() as u32,
+                            started_at_unix: room.started_at_unix,
+                            players: room
+                                .players
+                                .into_iter()
+                                .map(|p| RoomPlayerRes {
+                                    player_id: p.player_id,
+                                    display_name: p.display_name,
+                                    gravity: p.gravity,
+                                    friction: p.friction,
+                                    speed: p.speed,
+                                    next_param_change_at_unix: p.next_param_change_at_unix,
+                                })
+                                .collect(),
+                        })
+                        .collect(),
+                }),
+            )
+                .into_response()
+        }
+        Err(e) => (
+            StatusCode::BAD_GATEWAY,
+            Json(ErrorRes {
+                error: format!("control_plane_error:{e}"),
+            }),
+        )
+            .into_response(),
+    }
+}
+
+#[utoipa::path(
     post,
     path = "/v1/matches",
     tag = "kotatsu-api",
@@ -126,7 +213,10 @@ async fn openapi() -> impl IntoResponse {
         (status = 502, description = "Control plane failure", body = ErrorRes)
     )
 )]
-async fn create_match(State(st): State<AppState>, Json(_req): Json<CreateMatchReq>) -> impl IntoResponse {
+async fn create_match(
+    State(st): State<AppState>,
+    Json(_req): Json<CreateMatchReq>,
+) -> impl IntoResponse {
     let mut grpc = st.grpc.lock().await;
     match grpc.create_room(CreateRoomRequest {}).await {
         Ok(res) => {
@@ -185,7 +275,7 @@ async fn join_match(
                     match_id: r.match_id,
                     player_id: r.player_id,
                     token: r.token,
-                    quic_url: r.quic_url,
+                    udp_url: r.udp_url,
                     token_expires_at_unix: r.token_expires_at_unix,
                 }),
             )
@@ -238,6 +328,7 @@ async fn get_match(State(st): State<AppState>, Path(match_id): Path<String>) -> 
                 Json(GetMatchRes {
                     match_id: r.match_id,
                     max_players: r.max_players,
+                    started_at_unix: r.started_at_unix,
                     players: r
                         .players
                         .into_iter()
@@ -254,6 +345,90 @@ async fn get_match(State(st): State<AppState>, Path(match_id): Path<String>) -> 
             )
                 .into_response()
         }
+        Err(e) if e.code() == tonic::Code::NotFound => (
+            StatusCode::NOT_FOUND,
+            Json(ErrorRes {
+                error: "match_not_found".into(),
+            }),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::BAD_GATEWAY,
+            Json(ErrorRes {
+                error: format!("control_plane_error:{e}"),
+            }),
+        )
+            .into_response(),
+    }
+}
+
+#[utoipa::path(
+    post,
+    path = "/v1/matches/{match_id}/start",
+    tag = "kotatsu-api",
+    params(
+        ("match_id" = String, Path, description = "Match id")
+    ),
+    responses(
+        (status = 200, description = "Start a match", body = StartMatchRes),
+        (status = 404, description = "Match not found", body = ErrorRes),
+        (status = 502, description = "Control plane failure", body = ErrorRes)
+    )
+)]
+async fn start_match(
+    State(st): State<AppState>,
+    Path(match_id): Path<String>,
+) -> impl IntoResponse {
+    let mut grpc = st.grpc.lock().await;
+    match grpc.start_room(StartRoomRequest { match_id }).await {
+        Ok(res) => {
+            let r = res.into_inner();
+            (
+                StatusCode::OK,
+                Json(StartMatchRes {
+                    match_id: r.match_id,
+                    started_at_unix: r.started_at_unix,
+                }),
+            )
+                .into_response()
+        }
+        Err(e) if e.code() == tonic::Code::NotFound => (
+            StatusCode::NOT_FOUND,
+            Json(ErrorRes {
+                error: "match_not_found".into(),
+            }),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::BAD_GATEWAY,
+            Json(ErrorRes {
+                error: format!("control_plane_error:{e}"),
+            }),
+        )
+            .into_response(),
+    }
+}
+
+#[utoipa::path(
+    delete,
+    path = "/v1/matches/{match_id}",
+    tag = "kotatsu-api",
+    params(
+        ("match_id" = String, Path, description = "Match id")
+    ),
+    responses(
+        (status = 204, description = "Delete a match"),
+        (status = 404, description = "Match not found", body = ErrorRes),
+        (status = 502, description = "Control plane failure", body = ErrorRes)
+    )
+)]
+async fn delete_match(
+    State(st): State<AppState>,
+    Path(match_id): Path<String>,
+) -> impl IntoResponse {
+    let mut grpc = st.grpc.lock().await;
+    match grpc.delete_room(DeleteRoomRequest { match_id }).await {
+        Ok(_) => StatusCode::NO_CONTENT.into_response(),
         Err(e) if e.code() == tonic::Code::NotFound => (
             StatusCode::NOT_FOUND,
             Json(ErrorRes {
@@ -292,8 +467,9 @@ async fn main() -> Result<()> {
     let app = Router::new()
         .route("/health", get(health))
         .route("/openapi.json", get(openapi))
-        .route("/v1/matches", post(create_match))
-        .route("/v1/matches/:match_id", get(get_match))
+        .route("/v1/matches", get(list_matches).post(create_match))
+        .route("/v1/matches/:match_id", get(get_match).delete(delete_match))
+        .route("/v1/matches/:match_id/start", post(start_match))
         .route("/v1/matches/:match_id/join", post(join_match))
         .with_state(st);
 

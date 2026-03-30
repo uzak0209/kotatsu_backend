@@ -6,6 +6,8 @@
 
 # Node / build
 node_modules/
+.venv/
+__pycache__/
 
 # Local runtime files
 *.log

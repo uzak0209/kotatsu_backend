@@ -6,7 +6,10 @@ use tokio::sync::{mpsc, Mutex};
 use tracing::{info, warn};
 
 use crate::player::{register_player_udp, remove_player};
-use crate::room::{broadcast_datagram_udp, broadcast_reliable_udp, update_player_params};
+use crate::room::{
+    broadcast_datagram_udp, broadcast_datagram_udp_to_all, broadcast_reliable_udp,
+    update_player_params,
+};
 use crate::ticket::consume_ticket;
 use crate::types::{AppState, ClientDatagram, ClientReliable, ServerReliable};
 use crate::utils::now_ms;
@@ -168,14 +171,15 @@ async fn handle_join(
     let (tx, rx) = mpsc::channel::<ServerReliable>(1024);
 
     // Register player
-    let params = match register_player_udp(&st, &match_id, &player_id, display_name, addr, tx.clone()).await
-    {
-        Ok(p) => p,
-        Err(e) => {
-            send_error(&socket, addr, "join_failed", &e.to_string()).await;
-            return;
-        }
-    };
+    let params =
+        match register_player_udp(&st, &match_id, &player_id, display_name, addr, tx.clone()).await
+        {
+            Ok(p) => p,
+            Err(e) => {
+                send_error(&socket, addr, "join_failed", &e.to_string()).await;
+                return;
+            }
+        };
 
     // Add to client registry
     {
@@ -270,8 +274,6 @@ async fn handle_unreliable_message(
         Err(_) => return, // Silently ignore malformed datagrams
     };
 
-    let ClientDatagram::Pos { seq, x, y, vx, vy } = msg;
-
     let (match_id, player_id) = {
         let clients_guard = clients.lock().await;
         match clients_guard.get(&addr) {
@@ -280,18 +282,35 @@ async fn handle_unreliable_message(
         }
     };
 
-    let out = crate::types::ServerDatagram::Pos {
-        player_id: player_id.clone(),
-        seq,
-        x,
-        y,
-        vx,
-        vy,
-        server_time_ms: now_ms(),
-    };
+    match msg {
+        ClientDatagram::Pos { seq, x, y, vx, vy } => {
+            let out = crate::types::ServerDatagram::Pos {
+                player_id: player_id.clone(),
+                seq,
+                x,
+                y,
+                vx,
+                vy,
+                server_time_ms: now_ms(),
+            };
 
-    if let Ok(payload) = serde_json::to_vec(&out) {
-        broadcast_datagram_udp(&st, &match_id, &player_id, payload).await;
+            if let Ok(payload) = serde_json::to_vec(&out) {
+                broadcast_datagram_udp(&st, &match_id, &player_id, payload).await;
+            }
+        }
+        ClientDatagram::StageProgress {
+            current_stage_index,
+        } => {
+            let out = crate::types::ServerDatagram::StageProgress {
+                player_id,
+                current_stage_index,
+                server_time_ms: now_ms(),
+            };
+
+            if let Ok(payload) = serde_json::to_vec(&out) {
+                broadcast_datagram_udp_to_all(&st, &match_id, payload).await;
+            }
+        }
     }
 }
 
