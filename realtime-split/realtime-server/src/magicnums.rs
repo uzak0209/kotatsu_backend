@@ -1,4 +1,6 @@
 pub const ROOM_MAX_PLAYERS: usize = 4;
+pub const MATCH_STAGE_POOL_SIZE: usize = 5;
+pub const MATCH_STAGE_ORDER_LEN: usize = 4;
 pub const TOKEN_TTL_SECS: u64 = 60 * 60;
 pub const ROOM_IDLE_TIMEOUT_SECS: u64 = 3 * 60;
 pub const ROOM_CLEANUP_INTERVAL_SECS: u64 = 1;

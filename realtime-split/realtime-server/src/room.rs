@@ -1,10 +1,13 @@
 use anyhow::{anyhow, Result};
+use rand::seq::SliceRandom;
 use std::net::SocketAddr;
 use tokio::sync::mpsc;
 
+use crate::magicnums::{MATCH_STAGE_ORDER_LEN, MATCH_STAGE_POOL_SIZE, ROOM_MAX_PLAYERS};
 use crate::params::apply_param_change;
 use crate::types::{
-    AppState, ParamDirection, ParamKind, ParamMutation, PlayerConnection, ServerReliable,
+    AppState, MatchRoom, ParamDirection, ParamKind, ParamMutation, PlayerConnection,
+    PlayerMatchState, ServerReliable,
 };
 use crate::utils::now_unix;
 
@@ -134,6 +137,116 @@ pub(crate) async fn broadcast_datagram_udp(
     }
 }
 
+pub(crate) async fn broadcast_datagram_udp_to_all(st: &AppState, match_id: &str, payload: Vec<u8>) {
+    let addrs: Vec<SocketAddr> = {
+        let core = st.core.lock().await;
+        let Some(room) = core.matches.get(match_id) else {
+            return;
+        };
+        room.players
+            .values()
+            .filter_map(|p| match &p.connection {
+                Some(PlayerConnection::Udp(addr)) => Some(*addr),
+                None => None,
+            })
+            .collect()
+    };
+
+    if let Some(socket) = &st.udp_socket {
+        const PKT_UNRELIABLE: u8 = 0x02;
+        let mut packet = vec![PKT_UNRELIABLE];
+        packet.extend_from_slice(&payload);
+
+        for addr in addrs {
+            let _ = socket.send_to(&packet, addr).await;
+        }
+    }
+}
+
+pub(crate) async fn start_match_and_snapshot_players(
+    st: &AppState,
+    match_id: &str,
+) -> Result<(u64, bool, Vec<PlayerMatchState>)> {
+    let mut core = st.core.lock().await;
+    let room = core
+        .matches
+        .get_mut(match_id)
+        .ok_or_else(|| anyhow!("match_not_found"))?;
+
+    let just_started = room.started_at_unix == 0;
+    if just_started {
+        room.started_at_unix = now_unix();
+        room.last_activity_unix = room.started_at_unix;
+        assign_randomized_layout(room);
+    }
+
+    let started_at_unix = room.started_at_unix;
+    let players = snapshot_players(room);
+    Ok((started_at_unix, just_started, players))
+}
+
+pub(crate) async fn update_player_stage_progress(
+    st: &AppState,
+    match_id: &str,
+    player_id: &str,
+    current_stage_index: u8,
+) -> Result<u8> {
+    let mut core = st.core.lock().await;
+    let room = core
+        .matches
+        .get_mut(match_id)
+        .ok_or_else(|| anyhow!("match_not_found"))?;
+    let player = room
+        .players
+        .get_mut(player_id)
+        .ok_or_else(|| anyhow!("player_not_found"))?;
+
+    let max_stage_index = player.stage_order.len().saturating_add(1) as u8;
+    let clamped = current_stage_index.min(max_stage_index);
+    player.current_stage_index = clamped;
+    room.last_activity_unix = now_unix();
+    Ok(clamped)
+}
+
+fn assign_randomized_layout(room: &mut MatchRoom) {
+    let mut rng = rand::thread_rng();
+    let mut player_ids = room.players.keys().cloned().collect::<Vec<_>>();
+    player_ids.sort();
+
+    let mut color_indices = (0..ROOM_MAX_PLAYERS as u8).collect::<Vec<_>>();
+    color_indices.shuffle(&mut rng);
+
+    for (index, player_id) in player_ids.iter().enumerate() {
+        let Some(player) = room.players.get_mut(player_id) else {
+            continue;
+        };
+
+        let mut stage_order = (0..MATCH_STAGE_POOL_SIZE as u8).collect::<Vec<_>>();
+        stage_order.shuffle(&mut rng);
+        stage_order.truncate(MATCH_STAGE_ORDER_LEN.min(stage_order.len()));
+
+        player.color_index = color_indices.get(index).copied();
+        player.stage_order = stage_order;
+        player.current_stage_index = 0;
+    }
+}
+
+fn snapshot_players(room: &MatchRoom) -> Vec<PlayerMatchState> {
+    let mut players = room
+        .players
+        .iter()
+        .map(|(player_id, player)| PlayerMatchState {
+            player_id: player_id.clone(),
+            display_name: player.display_name.clone(),
+            color_index: player.color_index.unwrap_or(0),
+            stage_order: player.stage_order.clone(),
+            current_stage_index: player.current_stage_index,
+        })
+        .collect::<Vec<_>>();
+    players.sort_by(|a, b| a.player_id.cmp(&b.player_id));
+    players
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -157,6 +270,9 @@ mod tests {
                                 display_name: "tester".into(),
                                 params: PlayerParams::default(),
                                 next_param_change_at_unix: 0,
+                                color_index: None,
+                                stage_order: Vec::new(),
+                                current_stage_index: 0,
                                 reliable_tx: mpsc::channel(1).0,
                                 connection: None,
                             },
@@ -209,6 +325,9 @@ mod tests {
                                 display_name: "tester".into(),
                                 params: PlayerParams::default(),
                                 next_param_change_at_unix: 0,
+                                color_index: None,
+                                stage_order: Vec::new(),
+                                current_stage_index: 0,
                                 reliable_tx: mpsc::channel(1).0,
                                 connection: None,
                             },

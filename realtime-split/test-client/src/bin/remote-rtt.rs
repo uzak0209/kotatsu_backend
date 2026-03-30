@@ -453,7 +453,10 @@ async fn main() -> Result<()> {
         .await?;
 
     println!("api base: {api_base}");
-    println!("udp override: {}", udp_override_url.as_deref().unwrap_or(""));
+    println!(
+        "udp override: {}",
+        udp_override_url.as_deref().unwrap_or("")
+    );
     println!("remote host: {}", config.remote_host);
     if let Some(remote_ip) = &config.remote_ip {
         println!("remote ip override: {remote_ip}");

@@ -221,7 +221,9 @@ async fn run_one_client(
         let len = socket.recv(&mut buf).await?;
         let packet = &buf[..len];
         match parse_reliable(packet) {
-            Some(ServerReliable::JoinOk { player_id, params, .. }) => {
+            Some(ServerReliable::JoinOk {
+                player_id, params, ..
+            }) => {
                 if player_id != join.player_id {
                     return Err(anyhow!(
                         "joined with unexpected player_id: expected {} got {}",

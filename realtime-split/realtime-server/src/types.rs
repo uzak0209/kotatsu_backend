@@ -39,6 +39,15 @@ impl Default for PlayerParams {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub(crate) struct PlayerMatchState {
+    pub(crate) player_id: String,
+    pub(crate) display_name: String,
+    pub(crate) color_index: u8,
+    pub(crate) stage_order: Vec<u8>,
+    pub(crate) current_stage_index: u8,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct ParamMutation {
     pub(crate) params: PlayerParams,
@@ -84,6 +93,9 @@ pub(crate) struct PlayerHandle {
     pub(crate) display_name: String,
     pub(crate) params: PlayerParams,
     pub(crate) next_param_change_at_unix: u64,
+    pub(crate) color_index: Option<u8>,
+    pub(crate) stage_order: Vec<u8>,
+    pub(crate) current_stage_index: u8,
     pub(crate) reliable_tx: mpsc::Sender<ServerReliable>,
     pub(crate) connection: Option<PlayerConnection>,
 }
@@ -143,6 +155,7 @@ pub(crate) enum ServerReliable {
     MatchStarted {
         match_id: String,
         started_at_unix: u64,
+        players: Vec<PlayerMatchState>,
         server_time_ms: u64,
     },
     ParamApplied {
@@ -168,6 +181,10 @@ pub(crate) enum ClientDatagram {
         vx: f32,
         vy: f32,
     },
+    StageProgress {
+        seq: u64,
+        current_stage_index: u8,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -180,6 +197,12 @@ pub(crate) enum ServerDatagram {
         y: f32,
         vx: f32,
         vy: f32,
+        server_time_ms: u64,
+    },
+    StageProgress {
+        player_id: String,
+        seq: u64,
+        current_stage_index: u8,
         server_time_ms: u64,
     },
 }
