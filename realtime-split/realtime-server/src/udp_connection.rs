@@ -8,7 +8,7 @@ use tracing::{info, warn};
 use crate::player::{register_player_udp, remove_player};
 use crate::room::{
     broadcast_datagram_udp, broadcast_datagram_udp_to_all, broadcast_reliable_udp,
-    update_player_params, update_player_stage_progress,
+    update_player_params,
 };
 use crate::ticket::consume_ticket;
 use crate::types::{AppState, ClientDatagram, ClientReliable, ServerReliable};
@@ -299,20 +299,10 @@ async fn handle_unreliable_message(
             }
         }
         ClientDatagram::StageProgress {
-            seq,
             current_stage_index,
         } => {
-            let current_stage_index =
-                match update_player_stage_progress(&st, &match_id, &player_id, current_stage_index)
-                    .await
-                {
-                    Ok(value) => value,
-                    Err(_) => return,
-                };
-
             let out = crate::types::ServerDatagram::StageProgress {
                 player_id,
-                seq,
                 current_stage_index,
                 server_time_ms: now_ms(),
             };

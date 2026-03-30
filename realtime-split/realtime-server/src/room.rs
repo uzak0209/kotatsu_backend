@@ -185,29 +185,6 @@ pub(crate) async fn start_match_and_snapshot_players(
     Ok((started_at_unix, just_started, players))
 }
 
-pub(crate) async fn update_player_stage_progress(
-    st: &AppState,
-    match_id: &str,
-    player_id: &str,
-    current_stage_index: u8,
-) -> Result<u8> {
-    let mut core = st.core.lock().await;
-    let room = core
-        .matches
-        .get_mut(match_id)
-        .ok_or_else(|| anyhow!("match_not_found"))?;
-    let player = room
-        .players
-        .get_mut(player_id)
-        .ok_or_else(|| anyhow!("player_not_found"))?;
-
-    let max_stage_index = player.stage_order.len().saturating_add(1) as u8;
-    let clamped = current_stage_index.min(max_stage_index);
-    player.current_stage_index = clamped;
-    room.last_activity_unix = now_unix();
-    Ok(clamped)
-}
-
 fn assign_randomized_layout(room: &mut MatchRoom) {
     let mut rng = rand::thread_rng();
     let mut player_ids = room.players.keys().cloned().collect::<Vec<_>>();

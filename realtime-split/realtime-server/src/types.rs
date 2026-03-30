@@ -182,7 +182,6 @@ pub(crate) enum ClientDatagram {
         vy: f32,
     },
     StageProgress {
-        seq: u64,
         current_stage_index: u8,
     },
 }
@@ -201,7 +200,6 @@ pub(crate) enum ServerDatagram {
     },
     StageProgress {
         player_id: String,
-        seq: u64,
         current_stage_index: u8,
         server_time_ms: u64,
     },
