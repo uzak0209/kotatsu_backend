@@ -8,6 +8,7 @@ service ControlPlane {
   rpc IssueJoinTicket(IssueJoinTicketRequest) returns (IssueJoinTicketResponse);
   rpc GetRoom(GetRoomRequest) returns (GetRoomResponse);
   rpc StartRoom(StartRoomRequest) returns (StartRoomResponse);
+  rpc FinishRoom(FinishRoomRequest) returns (FinishRoomResponse);
   rpc DeleteRoom(DeleteRoomRequest) returns (DeleteRoomResponse);
 }
 
@@ -77,4 +78,17 @@ message StartRoomRequest {
 message StartRoomResponse {
   string match_id = 1;
   uint64 started_at_unix = 2;
+}
+
+message FinishRoomRequest {
+  string match_id = 1;
+  string player_id = 2;
+}
+
+message FinishRoomResponse {
+  string match_id = 1;
+  string player_id = 2;
+  uint32 rank = 3;
+  uint32 finished_player_count = 4;
+  uint32 total_players = 5;
 }

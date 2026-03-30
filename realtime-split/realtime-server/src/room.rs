@@ -185,6 +185,45 @@ pub(crate) async fn start_match_and_snapshot_players(
     Ok((started_at_unix, just_started, players))
 }
 
+pub(crate) async fn finish_player(
+    st: &AppState,
+    match_id: &str,
+    player_id: &str,
+) -> Result<(u32, u32, u32)> {
+    let mut core = st.core.lock().await;
+    let room = core
+        .matches
+        .get_mut(match_id)
+        .ok_or_else(|| anyhow!("match_not_found"))?;
+
+    if room.started_at_unix == 0 {
+        return Err(anyhow!("match_not_started"));
+    }
+
+    if !room.players.contains_key(player_id) {
+        return Err(anyhow!("player_not_found"));
+    }
+
+    let rank = match room
+        .finished_player_ids
+        .iter()
+        .position(|finished_player_id| finished_player_id == player_id)
+    {
+        Some(index) => (index + 1) as u32,
+        None => {
+            room.finished_player_ids.push(player_id.to_string());
+            room.last_activity_unix = now_unix();
+            room.finished_player_ids.len() as u32
+        }
+    };
+
+    Ok((
+        rank,
+        room.finished_player_ids.len() as u32,
+        room.players.len() as u32,
+    ))
+}
+
 fn assign_randomized_layout(room: &mut MatchRoom) {
     let mut rng = rand::thread_rng();
     let mut player_ids = room.players.keys().cloned().collect::<Vec<_>>();
@@ -256,6 +295,7 @@ mod tests {
                         )]),
                         started_at_unix: 0,
                         last_activity_unix: 0,
+                        finished_player_ids: Vec::new(),
                     },
                 )]),
                 tickets: HashMap::new(),
@@ -311,6 +351,7 @@ mod tests {
                         )]),
                         started_at_unix: 0,
                         last_activity_unix: 0,
+                        finished_player_ids: Vec::new(),
                     },
                 )]),
                 tickets: HashMap::new(),
@@ -351,6 +392,7 @@ mod tests {
                             players: HashMap::new(),
                             started_at_unix: 0,
                             last_activity_unix: now.saturating_sub(21),
+                            finished_player_ids: Vec::new(),
                         },
                     ),
                     (
@@ -359,6 +401,7 @@ mod tests {
                             players: HashMap::new(),
                             started_at_unix: 0,
                             last_activity_unix: now,
+                            finished_player_ids: Vec::new(),
                         },
                     ),
                     (
@@ -367,6 +410,7 @@ mod tests {
                             players: HashMap::new(),
                             started_at_unix: now.saturating_sub(100),
                             last_activity_unix: now.saturating_sub(100),
+                            finished_player_ids: Vec::new(),
                         },
                     ),
                 ]),

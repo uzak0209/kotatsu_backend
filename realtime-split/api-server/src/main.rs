@@ -7,8 +7,8 @@ use axum::{
     Json, Router,
 };
 use kotatsu_proto::controlplane::v1::{
-    control_plane_client::ControlPlaneClient, CreateRoomRequest, DeleteRoomRequest, GetRoomRequest,
-    IssueJoinTicketRequest, ListRoomsRequest, StartRoomRequest,
+    control_plane_client::ControlPlaneClient, CreateRoomRequest, DeleteRoomRequest,
+    FinishRoomRequest, GetRoomRequest, IssueJoinTicketRequest, ListRoomsRequest, StartRoomRequest,
 };
 use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, sync::Arc};
@@ -93,6 +93,20 @@ struct StartMatchRes {
     started_at_unix: u64,
 }
 
+#[derive(Debug, Deserialize, ToSchema)]
+struct FinishMatchReq {
+    player_id: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+struct FinishMatchRes {
+    match_id: String,
+    player_id: String,
+    rank: u32,
+    finished_player_count: u32,
+    total_players: u32,
+}
+
 #[derive(OpenApi)]
 #[openapi(
     paths(
@@ -103,6 +117,7 @@ struct StartMatchRes {
         get_match,
         delete_match,
         start_match,
+        finish_match,
         join_match
     ),
     components(
@@ -117,7 +132,9 @@ struct StartMatchRes {
             JoinMatchRes,
             RoomPlayerRes,
             GetMatchRes,
-            StartMatchRes
+            StartMatchRes,
+            FinishMatchReq,
+            FinishMatchRes
         )
     ),
     tags(
@@ -410,6 +427,72 @@ async fn start_match(
 }
 
 #[utoipa::path(
+    post,
+    path = "/v1/matches/{match_id}/finish",
+    tag = "kotatsu-api",
+    params(
+        ("match_id" = String, Path, description = "Match id")
+    ),
+    request_body = FinishMatchReq,
+    responses(
+        (status = 200, description = "Record a player's finish and return rank", body = FinishMatchRes),
+        (status = 404, description = "Match or player not found", body = ErrorRes),
+        (status = 409, description = "Match has not started", body = ErrorRes),
+        (status = 502, description = "Control plane failure", body = ErrorRes)
+    )
+)]
+async fn finish_match(
+    State(st): State<AppState>,
+    Path(match_id): Path<String>,
+    Json(req): Json<FinishMatchReq>,
+) -> impl IntoResponse {
+    let mut grpc = st.grpc.lock().await;
+    match grpc
+        .finish_room(FinishRoomRequest {
+            match_id,
+            player_id: req.player_id,
+        })
+        .await
+    {
+        Ok(res) => {
+            let r = res.into_inner();
+            (
+                StatusCode::OK,
+                Json(FinishMatchRes {
+                    match_id: r.match_id,
+                    player_id: r.player_id,
+                    rank: r.rank,
+                    finished_player_count: r.finished_player_count,
+                    total_players: r.total_players,
+                }),
+            )
+                .into_response()
+        }
+        Err(e) if e.code() == tonic::Code::NotFound => (
+            StatusCode::NOT_FOUND,
+            Json(ErrorRes {
+                error: e.message().to_string(),
+            }),
+        )
+            .into_response(),
+        Err(e) if e.code() == tonic::Code::FailedPrecondition => (
+            StatusCode::CONFLICT,
+            Json(ErrorRes {
+                error: e.message().to_string(),
+            }),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::BAD_GATEWAY,
+            Json(ErrorRes {
+                error: format!("control_plane_error:{e}"),
+            }),
+        )
+            .into_response(),
+    }
+}
+
+#[utoipa::path(
     delete,
     path = "/v1/matches/{match_id}",
     tag = "kotatsu-api",
@@ -470,6 +553,7 @@ async fn main() -> Result<()> {
         .route("/v1/matches", get(list_matches).post(create_match))
         .route("/v1/matches/:match_id", get(get_match).delete(delete_match))
         .route("/v1/matches/:match_id/start", post(start_match))
+        .route("/v1/matches/:match_id/finish", post(finish_match))
         .route("/v1/matches/:match_id/join", post(join_match))
         .with_state(st);
 
