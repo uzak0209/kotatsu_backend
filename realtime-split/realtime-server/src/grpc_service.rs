@@ -1,14 +1,14 @@
 use kotatsu_proto::controlplane::v1::{
     control_plane_server::ControlPlane, CreateRoomRequest, CreateRoomResponse, DeleteRoomRequest,
-    DeleteRoomResponse, GetRoomRequest, GetRoomResponse, IssueJoinTicketRequest,
-    IssueJoinTicketResponse, ListRoomsRequest, ListRoomsResponse, RoomPlayer, RoomSummary,
-    StartRoomRequest, StartRoomResponse,
+    DeleteRoomResponse, FinishRoomRequest, FinishRoomResponse, GetRoomRequest, GetRoomResponse,
+    IssueJoinTicketRequest, IssueJoinTicketResponse, ListRoomsRequest, ListRoomsResponse,
+    RoomPlayer, RoomSummary, StartRoomRequest, StartRoomResponse,
 };
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
 use crate::magicnums::{ROOM_MAX_PLAYERS, TOKEN_TTL_SECS};
-use crate::room::{broadcast_reliable_udp, start_match_and_snapshot_players};
+use crate::room::{broadcast_reliable_udp, finish_player, start_match_and_snapshot_players};
 use crate::types::{AppState, MatchRoom, ServerReliable, Ticket};
 use crate::utils::{now_ms, now_unix};
 
@@ -166,6 +166,30 @@ impl ControlPlane for ControlPlaneSvc {
         }))
     }
 
+    async fn finish_room(
+        &self,
+        request: Request<FinishRoomRequest>,
+    ) -> Result<Response<FinishRoomResponse>, Status> {
+        let req = request.into_inner();
+        let (rank, finished_player_count, total_players) =
+            finish_player(&self.st, &req.match_id, &req.player_id)
+                .await
+                .map_err(|err| match err.to_string().as_str() {
+                    "match_not_found" => Status::not_found("match_not_found"),
+                    "player_not_found" => Status::not_found("player_not_found"),
+                    "match_not_started" => Status::failed_precondition("match_not_started"),
+                    _ => Status::internal("finish_room_failed"),
+                })?;
+
+        Ok(Response::new(FinishRoomResponse {
+            match_id: req.match_id,
+            player_id: req.player_id,
+            rank,
+            finished_player_count,
+            total_players,
+        }))
+    }
+
     async fn delete_room(
         &self,
         request: Request<DeleteRoomRequest>,
@@ -225,6 +249,7 @@ mod tests {
                             players: HashMap::from([("p_b".into(), test_player("beta"))]),
                             started_at_unix: 200,
                             last_activity_unix: 0,
+                            finished_player_ids: Vec::new(),
                         },
                     ),
                     (
@@ -236,6 +261,7 @@ mod tests {
                             ]),
                             started_at_unix: 0,
                             last_activity_unix: 0,
+                            finished_player_ids: Vec::new(),
                         },
                     ),
                     (
@@ -244,6 +270,7 @@ mod tests {
                             players: HashMap::from([("p_c".into(), test_player("gamma"))]),
                             started_at_unix: 0,
                             last_activity_unix: 0,
+                            finished_player_ids: Vec::new(),
                         },
                     ),
                 ]),
@@ -292,6 +319,7 @@ mod tests {
                         )]),
                         started_at_unix: 0,
                         last_activity_unix: 0,
+                        finished_player_ids: Vec::new(),
                     },
                 )]),
                 tickets: HashMap::new(),
@@ -372,6 +400,91 @@ mod tests {
         assert!(core.matches.contains_key(&keep_match_id));
         assert!(!core.tickets.contains_key("t_delete"));
         assert!(core.tickets.contains_key("t_keep"));
+    }
+
+    #[tokio::test]
+    async fn finish_room_assigns_rank_and_is_idempotent() {
+        let match_id = "m_finish".to_string();
+        let svc = ControlPlaneSvc {
+            st: test_state(CoreState {
+                matches: HashMap::from([(
+                    match_id.clone(),
+                    MatchRoom {
+                        players: HashMap::from([
+                            ("p_1".into(), test_player("one")),
+                            ("p_2".into(), test_player("two")),
+                        ]),
+                        started_at_unix: 123,
+                        last_activity_unix: 123,
+                        finished_player_ids: Vec::new(),
+                    },
+                )]),
+                tickets: HashMap::new(),
+            }),
+        };
+
+        let first = svc
+            .finish_room(Request::new(FinishRoomRequest {
+                match_id: match_id.clone(),
+                player_id: "p_2".into(),
+            }))
+            .await
+            .expect("first finish should succeed")
+            .into_inner();
+        assert_eq!(first.rank, 1);
+        assert_eq!(first.finished_player_count, 1);
+        assert_eq!(first.total_players, 2);
+
+        let second = svc
+            .finish_room(Request::new(FinishRoomRequest {
+                match_id: match_id.clone(),
+                player_id: "p_1".into(),
+            }))
+            .await
+            .expect("second finish should succeed")
+            .into_inner();
+        assert_eq!(second.rank, 2);
+        assert_eq!(second.finished_player_count, 2);
+
+        let repeated = svc
+            .finish_room(Request::new(FinishRoomRequest {
+                match_id,
+                player_id: "p_2".into(),
+            }))
+            .await
+            .expect("repeated finish should be idempotent")
+            .into_inner();
+        assert_eq!(repeated.rank, 1);
+        assert_eq!(repeated.finished_player_count, 2);
+    }
+
+    #[tokio::test]
+    async fn finish_room_requires_started_match() {
+        let svc = ControlPlaneSvc {
+            st: test_state(CoreState {
+                matches: HashMap::from([(
+                    "m_wait".into(),
+                    MatchRoom {
+                        players: HashMap::from([("p_1".into(), test_player("one"))]),
+                        started_at_unix: 0,
+                        last_activity_unix: 0,
+                        finished_player_ids: Vec::new(),
+                    },
+                )]),
+                tickets: HashMap::new(),
+            }),
+        };
+
+        let err = svc
+            .finish_room(Request::new(FinishRoomRequest {
+                match_id: "m_wait".into(),
+                player_id: "p_1".into(),
+            }))
+            .await
+            .expect_err("unstarted match should fail");
+
+        assert_eq!(err.code(), tonic::Code::FailedPrecondition);
+        assert_eq!(err.message(), "match_not_started");
     }
 
     #[tokio::test]

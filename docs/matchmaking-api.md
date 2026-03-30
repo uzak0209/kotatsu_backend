@@ -22,8 +22,9 @@ Machine-readable OpenAPI is available at:
 4. Each player calls `POST /v1/matches/{match_id}/join`
 5. Optional: when the host starts the game, call `POST /v1/matches/{match_id}/start`
 6. Client uses the returned `udp_url` and `token` to connect to realtime UDP
-7. Optional: poll `GET /v1/matches/{match_id}` to inspect room state
-8. Optional: if the host cancels the lobby, call `DELETE /v1/matches/{match_id}`
+7. When a player reaches the goal, call `POST /v1/matches/{match_id}/finish` to record placement
+8. Optional: poll `GET /v1/matches/{match_id}` to inspect room state
+9. Optional: if the host cancels the lobby, call `DELETE /v1/matches/{match_id}`
 
 ## Endpoints
 
@@ -183,6 +184,47 @@ Success response:
 Possible responses:
 - `200 OK`
 - `404 Not Found`: `{"error":"match_not_found"}`
+- `502 Bad Gateway`: control plane error
+
+### `POST /v1/matches/{match_id}/finish`
+Records that a player has finished and returns that player's placement.
+
+Path parameters:
+- `match_id`: match identifier returned by `POST /v1/matches`
+
+Request body:
+```json
+{
+  "player_id": "p_0123456789abcdef0123456789abcdef"
+}
+```
+
+Example:
+```bash
+curl -sS -X POST http://127.0.0.1:8080/v1/matches/<match_id>/finish \
+  -H 'content-type: application/json' \
+  -d '{"player_id":"p_0123456789abcdef0123456789abcdef"}'
+```
+
+Success response:
+```json
+{
+  "match_id": "m_0123456789abcdef0123456789abcdef",
+  "player_id": "p_0123456789abcdef0123456789abcdef",
+  "rank": 1,
+  "finished_player_count": 1,
+  "total_players": 4
+}
+```
+
+Field notes:
+- `rank`: this player's finish order, starting at `1`
+- calling the endpoint again for the same player is idempotent and returns the same rank
+
+Possible responses:
+- `200 OK`
+- `404 Not Found`: `{"error":"match_not_found"}` or `{"error":"player_not_found"}`
+- `409 Conflict`: `{"error":"match_not_started"}`
 - `502 Bad Gateway`: control plane error
 
 ### `DELETE /v1/matches/{match_id}`

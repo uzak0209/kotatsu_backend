@@ -105,6 +105,7 @@ pub(crate) struct MatchRoom {
     pub(crate) players: HashMap<String, PlayerHandle>,
     pub(crate) started_at_unix: u64,
     pub(crate) last_activity_unix: u64,
+    pub(crate) finished_player_ids: Vec<String>,
 }
 
 impl MatchRoom {
@@ -113,6 +114,7 @@ impl MatchRoom {
             players: HashMap::new(),
             started_at_unix: 0,
             last_activity_unix: now_unix(),
+            finished_player_ids: Vec::new(),
         }
     }
 }
