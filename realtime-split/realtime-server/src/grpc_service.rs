@@ -8,7 +8,7 @@ use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
 use crate::magicnums::{ROOM_MAX_PLAYERS, TOKEN_TTL_SECS};
-use crate::room::broadcast_reliable_udp;
+use crate::room::{broadcast_reliable_udp, start_match_and_snapshot_players};
 use crate::types::{AppState, MatchRoom, ServerReliable, Ticket};
 use crate::utils::{now_ms, now_unix};
 
@@ -141,21 +141,10 @@ impl ControlPlane for ControlPlaneSvc {
         request: Request<StartRoomRequest>,
     ) -> Result<Response<StartRoomResponse>, Status> {
         let req = request.into_inner();
-        let (started_at_unix, just_started) = {
-            let mut core = self.st.core.lock().await;
-            let room = core
-                .matches
-                .get_mut(&req.match_id)
-                .ok_or_else(|| Status::not_found("match_not_found"))?;
-
-            if room.started_at_unix == 0 {
-                room.started_at_unix = now_unix();
-                room.last_activity_unix = room.started_at_unix;
-                (room.started_at_unix, true)
-            } else {
-                (room.started_at_unix, false)
-            }
-        };
+        let (started_at_unix, just_started, players) =
+            start_match_and_snapshot_players(&self.st, &req.match_id)
+                .await
+                .map_err(|_| Status::not_found("match_not_found"))?;
 
         if just_started {
             broadcast_reliable_udp(
@@ -164,6 +153,7 @@ impl ControlPlane for ControlPlaneSvc {
                 ServerReliable::MatchStarted {
                     match_id: req.match_id.clone(),
                     started_at_unix,
+                    players,
                     server_time_ms: now_ms(),
                 },
             )
@@ -216,6 +206,9 @@ mod tests {
             display_name: display_name.into(),
             params: PlayerParams::default(),
             next_param_change_at_unix: 0,
+            color_index: None,
+            stage_order: Vec::new(),
+            current_stage_index: 0,
             reliable_tx: tokio::sync::mpsc::channel(1).0,
             connection: None,
         }
@@ -290,6 +283,9 @@ mod tests {
                                 display_name: "host".into(),
                                 params: PlayerParams::default(),
                                 next_param_change_at_unix: 0,
+                                color_index: None,
+                                stage_order: Vec::new(),
+                                current_stage_index: 0,
                                 reliable_tx: tx,
                                 connection: None,
                             },

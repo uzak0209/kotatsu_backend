@@ -29,13 +29,32 @@ pub(crate) async fn register_player_udp(
         .get(player_id)
         .map(|p| p.params.clone())
         .unwrap_or_default();
+    let next_param_change_at_unix = room
+        .players
+        .get(player_id)
+        .map(|p| p.next_param_change_at_unix)
+        .unwrap_or(0);
+    let color_index = room.players.get(player_id).and_then(|p| p.color_index);
+    let stage_order = room
+        .players
+        .get(player_id)
+        .map(|p| p.stage_order.clone())
+        .unwrap_or_default();
+    let current_stage_index = room
+        .players
+        .get(player_id)
+        .map(|p| p.current_stage_index)
+        .unwrap_or(0);
 
     room.players.insert(
         player_id.to_string(),
         PlayerHandle {
             display_name,
             params: params.clone(),
-            next_param_change_at_unix: 0,
+            next_param_change_at_unix,
+            color_index,
+            stage_order,
+            current_stage_index,
             reliable_tx,
             connection: Some(PlayerConnection::Udp(addr)),
         },
