@@ -78,7 +78,7 @@ Reliable packet は、順序が重要な制御メッセージに使います。
 - `speed`: 1 から 3
 - `friction`: 1 から 2
 - 初期値は全て `2`
-- 変更後は 30 秒クールダウン
+- 変更後は 7 秒クールダウン
 
 ### サーバから返るもの
 
@@ -121,7 +121,7 @@ Reliable packet は、順序が重要な制御メッセージに使います。
     "friction": 2,
     "speed": 2
   },
-  "next_param_change_at_unix": 1761000030,
+  "next_param_change_at_unix": 1761000007,
   "server_time_ms": 1761000000456
 }
 ```
@@ -132,7 +132,7 @@ Reliable packet は、順序が重要な制御メッセージに使います。
 {
   "t": "error",
   "code": "param_update_failed",
-  "message": "cooldown_active:1761000030"
+  "message": "cooldown_active:1761000007"
 }
 ```
 

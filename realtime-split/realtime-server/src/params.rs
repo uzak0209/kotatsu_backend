@@ -64,7 +64,7 @@ mod tests {
         assert_eq!(updated.params.gravity, 3);
         assert_eq!(updated.params.friction, 2);
         assert_eq!(updated.params.speed, 2);
-        assert_eq!(updated.next_param_change_at_unix, 130);
+        assert_eq!(updated.next_param_change_at_unix, 107);
     }
 
     #[test]
